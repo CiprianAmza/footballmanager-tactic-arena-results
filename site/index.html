@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tactic Arena</title>
+  <meta name="description" content="Results of the tactic tests run with the Tactic Arena of the football manager game.">
+  <link rel="stylesheet" href="arena.css">
+</head>
+<body>
+  <div class="ta-page">
+    <div class="ta-head">
+      <div>
+        <span class="ta-eyebrow">Tactic Arena</span>
+        <h1>Tactic testing</h1>
+        <p class="ta-sub" id="summary">Loading…</p>
+      </div>
+    </div>
+
+    <p class="ta-error" id="error" hidden></p>
+
+    <div class="ta-toolbar">
+      <div class="ta-tabs" role="tablist" id="tabs">
+        <button type="button" role="tab" data-split="overall" class="active" aria-selected="true">Overall</button>
+        <button type="button" role="tab" data-split="home" aria-selected="false">Home</button>
+        <button type="button" role="tab" data-split="away" aria-selected="false">Away</button>
+      </div>
+      <label class="ta-filter" id="filter-wrap" hidden>Engine
+        <select class="ta-select" id="engine-filter"><option value="">All</option></select>
+      </label>
+    </div>
+    <div class="ta-table-wrap">
+      <table class="ta-table">
+        <thead><tr id="head-row"></tr></thead>
+        <tbody id="rows"><tr><td class="ta-left ta-muted" colspan="14">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="ta-small">PTS = average league points per season / maximum possible, from the three reference clubs of the chosen club's league.</p>
+    <p class="ta-small" id="generated"></p>
+  </div>
+  <script src="common.js"></script>
+  <script src="leaderboard.js"></script>
+</body>
+</html>
