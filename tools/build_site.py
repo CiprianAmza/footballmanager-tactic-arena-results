@@ -101,6 +101,68 @@ def version_of(test):
     return None
 
 
+def positive_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def load_predictions(repo):
+    """(world uid, {teamId: (predictedPosition, leagueSize)}) from baseline/; empty when absent."""
+    base = repo / "baseline"
+    uid, table = None, {}
+    try:
+        with open(base / "meta.json", encoding="utf-8") as handle:
+            uid = as_dict(json.load(handle)).get("uid")
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(base / "clubs.json", encoding="utf-8") as handle:
+            clubs = as_dict(json.load(handle))
+    except (OSError, ValueError) as error:
+        if (base / "clubs.json").exists():
+            warn("cannot read baseline/clubs.json: %s" % error)
+        return uid, table
+    for league in as_list(clubs.get("leagues")):
+        league = as_dict(league)
+        teams = as_list(league.get("teams"))
+        for team in teams:
+            team = as_dict(team)
+            position = positive_int(team.get("predictedPosition"))
+            team_id = team.get("teamId")
+            if position is None or team_id is None:
+                continue
+            size = positive_int(team.get("leagueSize")) or positive_int(league.get("leagueSize")) or len(teams)
+            table[str(team_id)] = (position, size)
+    return uid, table
+
+
+def fill_predictions(test, world_uid, table):
+    """Adds predictedPosition / leagueSize to runs that lack them, when the test ran on this world."""
+    if not table:
+        return
+    test_world = test.get("baselineUid")
+    if test_world and world_uid and test_world != world_uid:
+        return
+    for run in as_list(test.get("runs")):
+        if not isinstance(run, dict) or positive_int(run.get("predictedPosition")):
+            continue
+        found = table.get(str(run.get("teamId")))
+        if found:
+            run["predictedPosition"], size = found
+            if not positive_int(run.get("leagueSize")):
+                run["leagueSize"] = size
+
+
+def league_finish(run):
+    """(final league position, league size) from the run's result, or (None, None)."""
+    result = as_dict(run.get("result"))
+    for comp in as_list(result.get("competitions")):
+        comp = as_dict(comp)
+        if comp.get("kind") == "LEAGUE" or comp.get("typeId") in (1, 3):
+            size = positive_int(comp.get("totalTeams")) or len(as_list(result.get("leagueTable"))) or None
+            return positive_int(comp.get("position")), size
+    return None, None
+
+
 def load_test(folder):
     with gzip.open(folder / "result.json.gz", "rb") as handle:
         test = json.loads(handle.read().decode("utf-8"))
@@ -153,8 +215,10 @@ def build(repo, out):
             warn("duplicate test %s in %s (keeping %s)" % (key, previous[0], folder))
         by_key[key] = (folder, test, mtime)
 
+    world_uid, predictions = load_predictions(repo)
     rows = []
     for key, (folder, test, _) in sorted(by_key.items()):
+        fill_predictions(test, world_uid, predictions)
         target = data / key
         target.mkdir()
         images = images_of(folder)
@@ -169,11 +233,18 @@ def build(repo, out):
             run = as_dict(run)
             index = run.get("index")
             run_images = images.get(index, {}) if isinstance(index, int) else {}
+            finish, finish_size = league_finish(run)
             runs.append({
                 "index": index,
                 "kind": run.get("kind"),
+                "label": run.get("label"),
+                "teamId": run.get("teamId"),
                 "teamName": run.get("teamName"),
                 "status": run.get("status"),
+                "predictedPosition": positive_int(run.get("predictedPosition")),
+                "leagueSize": positive_int(run.get("leagueSize")),
+                "finalPosition": finish,
+                "finalLeagueSize": finish_size,
                 "images": {kind: "data/%s/%s" % (key, name) for kind, name in sorted(run_images.items())},
             })
         rows.append({
@@ -208,10 +279,19 @@ def build(repo, out):
         if isinstance(overall.get("pld"), (int, float)):
             matches += int(overall["pld"])
     rows.sort(key=lambda row: str(row.get("finishedAt") or row.get("createdAt") or ""), reverse=True)
+    # The reference clubs of the newest test that has them (they are the same for every test).
+    reference_clubs = []
+    for row in rows:
+        names = [run.get("teamName") for run in row["runs"]
+                 if str(run.get("kind") or "").startswith("REFERENCE") and run.get("teamName")]
+        if names:
+            reference_clubs = names
+            break
     index = {
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "testsCount": len(done),
         "matchesPlayed": matches,
+        "referenceClubs": reference_clubs,
         "tests": rows,
     }
     with open(data / "index.json", "w", encoding="utf-8") as handle:

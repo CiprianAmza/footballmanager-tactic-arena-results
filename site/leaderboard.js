@@ -54,7 +54,8 @@
   function renderHead() {
     var head = document.getElementById('head-row');
     head.textContent = '';
-    ['Thread', 'Formation', 'Owner', 'Club', 'League'].forEach(function (label) {
+    var labels = hasClubs() ? ['Thread', 'Formation', 'Owner', 'Club', 'League'] : ['Thread', 'Formation', 'Owner'];
+    labels.forEach(function (label) {
       head.appendChild(h('th', { class: 'ta-left', text: label }));
     });
     NUMERIC.concat([{ key: 'uploaded', label: 'Uploaded' }]).forEach(function (column) {
@@ -66,11 +67,24 @@
     });
   }
 
+  /** Club / League columns only when some test has a chosen club (general-only tests have none). */
+  function hasClubs() {
+    return (state.board.tests || []).some(function (test) { return test && (test.teamName || test.leagueName); });
+  }
+
+  /** The chosen club's media prediction ("6 / 20"), as small text next to the club. */
+  function prediction(test) {
+    var chosen = (test.runs || []).filter(function (run) { return run && run.kind === 'CHOSEN'; })[0];
+    var text = chosen ? A.placeText(chosen.predictedPosition, chosen.leagueSize) : null;
+    return text ? h('span', { class: 'ta-small', title: 'Media prediction', text: ' (pred. ' + text + ')' }) : null;
+  }
+
   function renderRows() {
     var body = document.getElementById('rows');
     body.textContent = '';
     var tests = sortedTests();
-    var columns = NUMERIC.length + 6;
+    var clubs = hasClubs();
+    var columns = NUMERIC.length + (clubs ? 6 : 4);
     if (!tests.length) {
       body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: columns,
         text: (state.board.tests || []).length ? 'No test matches this filter.' : 'No tactic has been tested yet.' })));
@@ -85,8 +99,8 @@
         thread,
         h('td', { class: 'ta-left', text: A.formationLabel(test.formation) }),
         h('td', { class: 'ta-left', text: A.show(test.owner) }),
-        h('td', { class: 'ta-left', text: A.show(test.teamName) }),
-        h('td', { class: 'ta-left', text: A.show(test.leagueName) }));
+        clubs ? h('td', { class: 'ta-left' }, A.show(test.teamName), prediction(test)) : null,
+        clubs ? h('td', { class: 'ta-left', text: A.show(test.leagueName) }) : null);
       var s = row(test);
       if (s) {
         tr.appendChild(h('td', { text: A.show(s.pld) }));
@@ -144,6 +158,12 @@
       count + ' tactics have been tested. Total number of matches played is ' + matches + '.';
     if (state.board.generatedAt) {
       document.getElementById('generated').textContent = 'Updated ' + A.formatDate(state.board.generatedAt, true) + '.';
+    }
+    var refs = (Array.isArray(state.board.referenceClubs) ? state.board.referenceClubs : [])
+      .filter(function (name) { return typeof name === 'string' && name; });
+    if (refs.length) {
+      document.getElementById('pts-note').textContent = 'PTS = average league points per season / maximum possible, from the three reference clubs (' +
+        refs.join(', ') + ').';
     }
     setupFilter();
     render();

@@ -10,6 +10,7 @@
 
   var RUN_KIND_LABELS = {
     CHOSEN: 'Chosen club',
+    REFERENCE: 'Reference',
     REFERENCE_TOP: 'Reference · highest reputation',
     REFERENCE_MEDIAN: 'Reference · median reputation',
     REFERENCE_BOTTOM: 'Reference · lowest reputation'
@@ -331,24 +332,150 @@
     }
   }
 
-  function runCard(run, images) {
-    var title = h('h2', null, (RUN_KIND_LABELS[run.kind] || A.show(run.kind)) + ' · ' + (run.teamName || 'club not chosen'));
-    if (run.teamName && A.isNum(run.teamReputation)) {
-      title.appendChild(document.createTextNode(' '));
-      title.appendChild(h('span', { class: 'ta-small', text: '(reputation ' + run.teamReputation + ')' }));
-    }
-    if (run.status && run.status !== 'DONE') title.appendChild(h('span', { class: 'ta-status ' + run.status, text: run.status }));
-    var card = h('section', { class: 'ta-card' }, title);
-    if (run.message) card.appendChild(h('p', { class: 'ta-error', text: run.message }));
-    if (run.stats) card.appendChild(A.resultsBlock(run.stats));
+  /** Everything about one run; built the first time its row is opened. */
+  function runDetail(run, images) {
+    var box = h('div');
+    if (run.message) box.appendChild(h('p', { class: 'ta-error', text: run.message }));
+    box.appendChild(A.resultsBlock(run.stats, 'Results · ' + A.show(run.teamName), 'Available when this run has finished.'));
     var hasResult = run.result && typeof run.result === 'object';
     if (hasResult || Object.keys(images).length) {
       var shots = h('div', { class: 'ta-shots' });
       KINDS.forEach(function (kind) {
         if (hasResult || images[kind.key]) shots.appendChild(figure(run, kind, images));
       });
-      card.appendChild(shots);
+      box.appendChild(shots);
     }
+    return box;
+  }
+
+  /* ---------- clubs table ---------- */
+
+  var KIND_ORDER = { CHOSEN: 0, REFERENCE_TOP: 1, REFERENCE_MEDIAN: 2, REFERENCE_BOTTOM: 3 };
+
+  function leagueOf(run) {
+    var comps = list(obj(run.result).competitions);
+    for (var i = 0; i < comps.length; i++) {
+      var comp = obj(comps[i]);
+      if (isLeague(comp)) return comp;
+    }
+    return null;
+  }
+
+  function finish(run) {
+    var league = leagueOf(run);
+    if (!league || !A.isNum(league.position)) return null;
+    var size = A.isNum(league.totalTeams) && league.totalTeams > 0 ? league.totalTeams : list(obj(run.result).leagueTable).length;
+    return { position: league.position, size: size || null };
+  }
+
+  function cupsText(run) {
+    return list(obj(run.result).competitions).map(obj).filter(function (comp) { return !isLeague(comp); })
+      .map(function (comp) {
+        var name = comp.name || comp.competitionName || 'Cup';
+        return { name: name, text: comp.trophy ? '🏆 ' + name : (comp.stageReached || comp.statusLabel || comp.currentStage || '—') };
+      });
+  }
+
+  /** Open runs from the address (#run=2 or #run=0,2). */
+  function openFromHash() {
+    var match = /(?:^#|&)run=([0-9,]+)/.exec(window.location.hash || '');
+    return match ? match[1].split(',').filter(Boolean) : [];
+  }
+
+  function writeHash(open) {
+    var keys = Object.keys(open).filter(function (k) { return open[k]; });
+    var url = window.location.pathname + window.location.search + (keys.length ? '#run=' + keys.join(',') : '');
+    try { history.replaceState(null, '', url); } catch (error) { /* file:// or sandbox: keep the page working */ }
+  }
+
+  function runsTable(test, runImages) {
+    var runs = list(test.runs).filter(function (r) { return r && typeof r === 'object'; }).slice().sort(function (a, b) {
+      var ka = KIND_ORDER[a.kind] !== undefined ? KIND_ORDER[a.kind] : 9;
+      var kb = KIND_ORDER[b.kind] !== undefined ? KIND_ORDER[b.kind] : 9;
+      return (ka - kb) || (num(a.index) - num(b.index));
+    });
+    var columns = ['Club', 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD', 'Cups'];
+    var optional = { GF: 1, GA: 1, xGF: 1, xGA: 1, Role: 1 };
+    var wrap = h('div', { class: 'ta-table-wrap runs-wrap' });
+    var table = h('table', { class: 'ta-table runs-table' }, h('thead', null, h('tr', null, columns.map(function (label, i) {
+      return h('th', { class: (i < 2 || label === 'Cups' ? 'ta-left' : '') + (optional[label] ? ' opt' : ''), text: label });
+    }))));
+    wrap.appendChild(table);
+    var open = {};
+    var details = [];
+
+    function fit() {
+      details.forEach(function (inner) { inner.style.width = wrap.clientWidth + 'px'; });
+    }
+    window.addEventListener('resize', fit);
+
+    runs.forEach(function (run, position) {
+      var id = A.isNum(run.index) ? String(run.index) : 'p' + position;
+      var images = A.isNum(run.index) ? (runImages[run.index] || {}) : {};
+      var split = run.stats && obj(run.stats).overall ? obj(run.stats.overall) : null;
+      var predicted = A.placeText(run.predictedPosition, run.leagueSize);
+      var done = finish(run);
+      var finishClass = null, finishTitle = null;
+      if (done && A.isNum(run.predictedPosition)) {
+        if (done.position < run.predictedPosition) { finishClass = 'ta-pos'; finishTitle = 'Better than predicted'; }
+        else if (done.position > run.predictedPosition) { finishClass = 'ta-neg'; finishTitle = 'Worse than predicted'; }
+      }
+      var cups = cupsText(run);
+      var detailId = 'run-detail-' + id;
+
+      var club = h('td', { class: 'ta-left ta-strong' }, h('span', { class: 'run-arrow', 'aria-hidden': 'true', text: '▸' }),
+        run.teamName || 'club not chosen');
+      if (run.status && run.status !== 'DONE') club.appendChild(h('span', { class: 'ta-status ' + run.status, text: run.status }));
+      var summary = h('tr', { class: 'run-row', tabindex: '0', role: 'button', 'aria-expanded': 'false', 'aria-controls': detailId },
+        club,
+        h('td', { class: 'ta-left opt', text: (typeof run.label === 'string' && run.label) || RUN_KIND_LABELS[run.kind] || A.show(run.kind) }),
+        h('td', { text: A.isNum(run.teamReputation) ? String(run.teamReputation) : '—' }),
+        h('td', { text: predicted || '—' }),
+        h('td', { class: finishClass, title: finishTitle, text: done ? A.placeText(done.position, done.size) : '—' }),
+        h('td', { text: split ? A.show(split.pld) : '—' }),
+        h('td', { class: 'ta-strong', text: split ? A.pts(split) : '—' }),
+        h('td', { class: split ? A.signClass(split.gd) : null, text: split ? A.signed(split.gd) : '—' }),
+        h('td', { class: 'opt', text: split ? A.show(split.gf) : '—' }),
+        h('td', { class: 'opt', text: split ? A.show(split.ga) : '—' }),
+        h('td', { class: 'opt', text: split ? A.show(split.xgf) : '—' }),
+        h('td', { class: 'opt', text: split ? A.show(split.xga) : '—' }),
+        h('td', { class: split ? A.signClass(split.xgd) : null, text: split ? A.signed(split.xgd) : '—' }),
+        h('td', { class: 'ta-left ta-small cups', title: cups.map(function (c) { return c.name + ': ' + c.text; }).join('\n') || null,
+          text: cups.length ? cups.map(function (c) { return c.text; }).join(' · ') : '—' }));
+      var inner = h('div', { class: 'run-detail-inner' });
+      var detail = h('tr', { class: 'run-detail', id: detailId, hidden: true }, h('td', { colspan: columns.length }, inner));
+      var built = false;
+
+      function setOpen(value, scroll) {
+        open[id] = value;
+        detail.hidden = !value;
+        summary.classList.toggle('open', value);
+        summary.setAttribute('aria-expanded', value ? 'true' : 'false');
+        if (value && !built) { built = true; inner.appendChild(runDetail(run, images)); details.push(inner); }
+        fit();
+        if (scroll) summary.scrollIntoView({ block: 'start' });
+      }
+      function toggle() { setOpen(!open[id]); writeHash(open); }
+      summary.addEventListener('click', toggle);
+      summary.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); }
+      });
+      table.appendChild(h('tbody', { class: 'run' }, summary, detail));
+      run.__open = setOpen;
+      run.__id = id;
+    });
+
+    var card = h('section', { class: 'ta-card runs-card' },
+      h('h3', { text: 'Tested clubs' }),
+      h('p', { class: 'ta-small', text: 'Click a club to see its results, tactic, full schedule and competition overview.' }),
+      wrap);
+    // Rows named in the address open once the table is on the page.
+    card.__restore = function () {
+      var wanted = openFromHash();
+      runs.forEach(function (run) {
+        if (wanted.indexOf(run.__id) >= 0) run.__open(true, run.__id === wanted[0]);
+      });
+    };
     return card;
   }
 
@@ -359,11 +486,14 @@
     document.title = (test.name ? test.name + ' · ' : '') + 'Tactic Arena';
     page.textContent = '';
     var sub = [
-      A.formationLabel(test.formation), A.show(test.teamName), A.show(test.leagueName), 'by ' + A.show(test.owner),
+      A.formationLabel(test.formation),
+      test.teamName ? String(test.teamName) : 'general test (reference clubs only)',
+      test.leagueName ? String(test.leagueName) : null,
+      test.autoEleven === true ? 'automatic eleven' : null,
+      'by ' + A.show(test.owner),
       'season ' + A.show(test.season) + ', days ' + A.show(test.startDay) + '–' + A.show(test.endDay),
       'engine ' + A.show(test.engine), A.formatDate(test.createdAt, true)
-    ];
-    if (test.autoEleven === true) sub.splice(4, 0, 'automatic eleven');
+    ].filter(Boolean);
     var heading = h('h1', { text: A.show(test.name) });
     if (test.status && test.status !== 'DONE') heading.appendChild(h('span', { class: 'ta-status ' + test.status, text: test.status }));
     page.appendChild(h('div', { class: 'ta-head' },
@@ -375,15 +505,9 @@
 
     page.appendChild(h('section', { class: 'ta-card' },
       A.resultsBlock(test.results, 'Results · reference clubs', 'Available when the three reference runs have finished.')));
-    page.appendChild(h('section', { class: 'ta-card' },
-      A.resultsBlock(test.chosen, 'Chosen club · ' + A.show(test.teamName), "Available when the chosen club's run has finished.")));
-
-    list(test.runs).filter(function (r) { return r && typeof r === 'object'; })
-      .slice().sort(function (a, b) { return num(a.index) - num(b.index); })
-      .forEach(function (run) {
-        var images = A.isNum(run.index) ? (runImages[run.index] || {}) : {};
-        page.appendChild(runCard(run, images));
-      });
+    var clubs = runsTable(test, runImages);
+    page.appendChild(clubs);
+    clubs.__restore();
   }
 
   var key = new URLSearchParams(window.location.search).get('t');

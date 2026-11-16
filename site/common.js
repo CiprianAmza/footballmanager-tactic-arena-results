@@ -124,6 +124,12 @@
     return section;
   }
 
+  /** "6 / 12" (place / clubs in the league); null when the place is unknown. */
+  function placeText(position, size) {
+    if (!isNum(position) || position <= 0) return null;
+    return position + ' / ' + (isNum(size) && size > 0 ? size : '—');
+  }
+
   function pts(split) {
     if (!split || !isNum(split.pts)) return '—';
     return split.pts + ' / ' + show(split.ptsMax);
@@ -145,7 +151,7 @@
   function closeLightbox() { if (lightbox) { lightbox.hidden = true; lightbox.textContent = ''; } }
 
   window.Arena = {
-    h: h, show: show, signed: signed, signClass: signClass, isNum: isNum, pts: pts,
+    h: h, show: show, signed: signed, signClass: signClass, isNum: isNum, pts: pts, placeText: placeText,
     formationLabel: formationLabel, formatDate: formatDate, parseDate: parseDate,
     loadJson: loadJson, engineLabel: engineLabel, testUrl: testUrl,
     resultsBlock: resultsBlock, openLightbox: openLightbox

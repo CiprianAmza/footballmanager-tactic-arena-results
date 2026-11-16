@@ -161,6 +161,19 @@ a { color: var(--fm-info); }
 .kv dd { margin: 0; color: var(--fm-heading); font-weight: 700; }
 .ta-subhead { margin: 0 0 8px; color: var(--fm-text-dim); font-size: 0.75em; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
 
+/* Tested clubs: one row per run, the details open under it */
+.runs-card .ta-table-wrap { border-radius: var(--fm-radius); margin-top: 8px; }
+.runs-table tr.run-row { cursor: pointer; }
+.runs-table tr.run-row:hover td, .runs-table tr.run-row.open td { background: var(--fm-bg-row-hover); }
+.runs-table tr.run-row:focus-visible { outline: 2px solid var(--fm-accent); outline-offset: -2px; }
+.runs-table tbody.run:nth-child(even) tr.run-row td { background: rgba(255, 255, 255, 0.02); }
+.runs-table tbody.run:nth-child(even) tr.run-row:hover td, .runs-table tbody.run:nth-child(even) tr.run-row.open td { background: var(--fm-bg-row-hover); }
+.run-arrow { display: inline-block; width: 1.1em; color: var(--fm-accent); transition: transform 0.15s; }
+.run-row.open .run-arrow { transform: rotate(90deg); }
+.runs-table td.cups { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.runs-table tr.run-detail > td { padding: 0; white-space: normal; text-align: left; background: var(--fm-bg) !important; border-bottom: 2px solid var(--fm-border); }
+.run-detail-inner { position: sticky; left: 0; padding: 16px; min-width: 0; }
+
 @media (max-width: 860px) {
   .tactic-layout { grid-template-columns: minmax(0, 1fr); }
 }
@@ -169,4 +182,7 @@ a { color: var(--fm-info); }
   .ta-tabs button { padding: 8px 12px; }
   .shirt { width: 26px; height: 26px; font-size: 0.7em; border-width: 2px; }
   .slot-role { display: none; }
+  .runs-table .opt { display: none; }
+  .runs-table td.cups { max-width: 140px; }
+  .run-detail-inner { padding: 10px; }
 }

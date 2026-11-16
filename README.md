@@ -34,7 +34,9 @@ survive a database reset. Nothing under `tests/` is edited by hand.
    - `data/<key>/result.json`: the full test as plain JSON, plus its screenshots
      (`<key>` = the test `uid`, or the folder name when there is none).
 
-   A test whose JSON cannot be read is skipped with a warning.
+   A test whose JSON cannot be read is skipped with a warning. Runs without a media prediction
+   (`predictedPosition`, `leagueSize`) get it from `baseline/clubs.json` by `teamId`, unless the
+   test's `baselineUid` differs from `baseline/meta.json`.
 3. The workflow publishes `_site/` to GitHub Pages. The site reads only those static files; there
    is no backend. A run without screenshots is drawn from the data (pitch with the eleven and
    the team instructions, full schedule, competition overview).
