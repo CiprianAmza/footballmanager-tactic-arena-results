@@ -114,6 +114,9 @@ a { color: var(--fm-info); }
 .cal-badge.cup { background: #c0392b; }
 .cal-badge.european { background: #2e3192; }
 .cal-badge.diamond { background: #0e7490; }
+.players-panel { margin: 12px 0; }
+.players-facts { margin: 0 0 10px; }
+.players-kinds { margin-bottom: 10px; }
 .split-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .venue { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700; background: var(--fm-bg-row); }
 .venue.home { color: var(--fm-success); }

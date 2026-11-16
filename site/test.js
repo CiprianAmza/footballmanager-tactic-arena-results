@@ -365,6 +365,125 @@
     return panel;
   }
 
+  /* ---------- players ---------- */
+
+  var PLAYER_KINDS = [
+    { key: 'ALL', label: 'All' }, { key: 'LEAGUE', label: 'League' },
+    { key: 'DIAMOND', label: 'Diamond League' }, { key: 'CUP', label: 'Cup' }
+  ];
+  var PLAYER_COLUMNS = [
+    { key: 'name', label: 'Player', text: true },
+    { key: 'position', label: 'Pos', text: true },
+    { key: 'age', label: 'Age' },
+    { key: 'apps', label: 'Apps' },
+    { key: 'starts', label: 'Starts' },
+    { key: 'minutes', label: 'Min' },
+    { key: 'goals', label: 'Goals' },
+    { key: 'assists', label: 'Assists' },
+    { key: 'avgRating', label: 'Avg rating', decimals: 2 },
+    { key: 'motm', label: 'MOTM' },
+    { key: 'yellow', label: 'Yellow' },
+    { key: 'red', label: 'Red' },
+    { key: 'cleanSheets', label: 'Clean sheets' }
+  ];
+  var KIND_FIELDS = { name: 1, position: 1, apps: 1, goals: 1, assists: 1, avgRating: 1 };
+
+  /** Season statistics of the run's players: sortable, with a competition switch when the data has it. */
+  function playersPanel(run, result) {
+    var players = list(result.players).filter(function (p) { return p && typeof p === 'object'; });
+    var kinds = PLAYER_KINDS.filter(function (kind) {
+      return kind.key === 'ALL' || players.some(function (p) { return obj(p.byKind)[kind.key]; });
+    });
+    var state = { kind: 'ALL', sortKey: 'avgRating', desc: true };
+    var tableBox = h('div', { class: 'ta-scroll' });
+    var switcher = kinds.length > 1 ? h('div', { class: 'ta-chips players-kinds', role: 'tablist' }) : null;
+
+    function rowsFor(kind) {
+      return players.map(function (p) {
+        if (kind === 'ALL') return p;
+        var k = obj(obj(p.byKind)[kind]);
+        return { name: p.name, position: p.position, apps: k.apps, goals: k.goals, assists: k.assists, avgRating: k.avgRating };
+      }).filter(function (p) { return kind === 'ALL' || A.isNum(p.apps) && p.apps > 0; });
+    }
+
+    function draw() {
+      var rows = rowsFor(state.kind);
+      var columns = PLAYER_COLUMNS.filter(function (c) {
+        if (state.kind !== 'ALL' && !KIND_FIELDS[c.key]) return false;
+        return c.text || rows.some(function (p) { return A.isNum(p[c.key]); });
+      });
+      if (!columns.some(function (c) { return c.key === state.sortKey; })) { state.sortKey = 'name'; state.desc = false; }
+      rows.sort(function (a, b) {
+        var c = PLAYER_COLUMNS.filter(function (x) { return x.key === state.sortKey; })[0];
+        var x = a[state.sortKey], y = b[state.sortKey];
+        var result;
+        if (c.text) result = String(x || '').localeCompare(String(y || ''));
+        else {
+          var xn = A.isNum(x) ? x : null, yn = A.isNum(y) ? y : null;
+          if (xn === null && yn === null) result = 0;
+          else if (xn === null) return 1;
+          else if (yn === null) return -1;
+          else result = xn - yn;
+        }
+        if (result === 0) result = (num(a.apps) - num(b.apps)) * (state.desc ? 1 : -1);
+        return state.desc ? -result : result;
+      });
+      var head = h('tr', null, columns.map(function (c) {
+        return h('th', { class: 'sortable' + (c.text ? ' ta-left' : '') + (state.sortKey === c.key ? ' sorted' : ''),
+          text: c.label + (state.sortKey === c.key ? (state.desc ? ' ▼' : ' ▲') : ''),
+          onclick: function () {
+            if (state.sortKey === c.key) state.desc = !state.desc;
+            else { state.sortKey = c.key; state.desc = !c.text; }
+            draw();
+          } });
+      }));
+      var body = h('tbody');
+      rows.forEach(function (p) {
+        body.appendChild(h('tr', { class: A.isNum(p.apps) && p.apps === 0 ? 'ta-muted' : null }, columns.map(function (c) {
+          var v = p[c.key];
+          var text = c.text ? A.show(v) : (A.isNum(v) ? (c.decimals ? v.toFixed(c.decimals) : String(v)) : '—');
+          return h('td', { class: c.text ? 'ta-left' + (c.key === 'name' ? ' ta-strong' : '') : null, text: text });
+        })));
+      });
+      if (!rows.length) body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: columns.length, text: 'No appearances.' })));
+      tableBox.textContent = '';
+      tableBox.appendChild(h('table', { class: 'ta-table' }, h('thead', null, head), body));
+      if (switcher) {
+        switcher.textContent = '';
+        kinds.forEach(function (kind) {
+          switcher.appendChild(h('button', { type: 'button', role: 'tab', class: state.kind === kind.key ? 'active' : null,
+            'aria-selected': state.kind === kind.key ? 'true' : 'false', text: kind.label,
+            onclick: function () { state.kind = kind.key; draw(); } }));
+        });
+      }
+    }
+
+    var summary = obj(result.playerSummary);
+    var facts = [];
+    if (summary.topScorer && summary.topScorer.name) facts.push('Top scorer: ' + summary.topScorer.name + ' (' + A.show(summary.topScorer.goals) + ')');
+    if (summary.topAssists && summary.topAssists.name) facts.push('Most assists: ' + summary.topAssists.name + ' (' + A.show(summary.topAssists.assists) + ')');
+    if (summary.bestRated && summary.bestRated.name) {
+      facts.push('Best rated: ' + summary.bestRated.name + (A.isNum(summary.bestRated.avgRating) ? ' (' + summary.bestRated.avgRating.toFixed(2) + ')' : ''));
+    }
+    if (A.isNum(summary.teamAvgRating)) facts.push('Team average rating: ' + summary.teamAvgRating.toFixed(2));
+
+    draw();
+    return h('div', { class: 'ta-panel players-panel' },
+      h('div', { class: 'ta-panel-head' }, h('h3', { text: 'PLAYERS' }),
+        h('span', { class: 'ta-panel-meta', text: A.show(result.teamName || run.teamName) + ' · Season ' + A.show(result.season) })),
+      facts.length ? h('p', { class: 'ta-small players-facts', text: facts.join(' · ') }) : null,
+      switcher, tableBox);
+  }
+
+  /** "Name 31 · 7.12" for the clubs table, from result.playerSummary. */
+  function playersCell(run) {
+    var summary = obj(obj(run.result).playerSummary);
+    var parts = [];
+    if (summary.topScorer && summary.topScorer.name) parts.push(summary.topScorer.name + ' ' + A.show(summary.topScorer.goals));
+    if (A.isNum(summary.teamAvgRating)) parts.push(summary.teamAvgRating.toFixed(2));
+    return parts.length ? parts.join(' · ') : null;
+  }
+
   var PANELS = { tactic: tacticPanel, schedule: schedulePanel, competitions: competitionsPanel };
 
   /* ---------- page ---------- */
@@ -413,6 +532,11 @@
       box.appendChild(league);
     }
     var hasResult = run.result && typeof run.result === 'object';
+    if (hasResult && list(run.result.players).length) {
+      try { box.appendChild(playersPanel(run, run.result)); } catch (error) {
+        console.error('Tactic Arena players panel failed', error);
+      }
+    }
     if (hasResult || Object.keys(images).length) {
       var shots = h('div', { class: 'ta-shots' });
       KINDS.forEach(function (kind) {
@@ -479,8 +603,9 @@
       return (ka - kb) || (num(a.index) - num(b.index));
     });
     var hasDiamond = runs.some(function (r) { return diamondCell(r) !== null; });
+    var hasPlayers = runs.some(function (r) { return playersCell(r) !== null; });
     var columns = ['Club', 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
-      .concat(hasDiamond ? ['Diamond League'] : []).concat(['Cups']);
+      .concat(hasDiamond ? ['Diamond League'] : []).concat(hasPlayers ? ['Top scorer · rating'] : []).concat(['Cups']);
     var optional = { GF: 1, GA: 1, xGF: 1, xGA: 1, Role: 1 };
     var wrap = h('div', { class: 'ta-table-wrap runs-wrap' });
     var table = h('table', { class: 'ta-table runs-table' }, h('thead', null, h('tr', null, columns.map(function (label, i) {
@@ -527,6 +652,7 @@
         h('td', { class: 'opt', text: split ? A.show(split.xga) : '—' }),
         h('td', { class: split ? A.signClass(split.xgd) : null, text: split ? A.signed(split.xgd) : '—' }),
         hasDiamond ? h('td', { text: diamondCell(run) || '—' }) : null,
+        hasPlayers ? h('td', { class: 'ta-left ta-small', title: 'Top scorer and team average rating', text: playersCell(run) || '—' }) : null,
         h('td', { class: 'ta-left ta-small cups', title: cups.map(function (c) { return c.name + ': ' + c.text; }).join('\n') || null,
           text: cups.length ? cups.map(function (c) { return c.text; }).join(' · ') : '—' }));
       var inner = h('div', { class: 'run-detail-inner' });

@@ -263,6 +263,47 @@ def fill_diamond(test):
     test["diamond"] = test_diamond(test)
 
 
+def number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def player_summary(players):
+    """Top scorer, top assists, best rated (with a fair number of games) and the team's average rating."""
+    players = [as_dict(p) for p in players if isinstance(p, dict)]
+    played = [p for p in players if (number(p.get("apps")) or 0) > 0]
+    if not played:
+        return None
+
+    def best(field):
+        top = max(played, key=lambda p: (number(p.get(field)) or 0, number(p.get("apps")) or 0))
+        return top if (number(top.get(field)) or 0) > 0 else None
+
+    scorer, assister = best("goals"), best("assists")
+    most_apps = max(number(p.get("apps")) or 0 for p in played)
+    rated = [p for p in played if number(p.get("avgRating")) is not None]
+    regular = [p for p in rated if (number(p.get("apps")) or 0) >= max(1, most_apps / 3)] or rated
+    best_rated = max(regular, key=lambda p: number(p.get("avgRating"))) if regular else None
+    weight = sum(number(p.get("apps")) or 0 for p in rated)
+    team_avg = round(sum(number(p.get("avgRating")) * (number(p.get("apps")) or 0) for p in rated) / weight, 2) if weight else None
+    return {
+        "topScorer": {"name": scorer.get("name"), "goals": scorer.get("goals")} if scorer else None,
+        "topAssists": {"name": assister.get("name"), "assists": assister.get("assists")} if assister else None,
+        "bestRated": {"name": best_rated.get("name"), "avgRating": best_rated.get("avgRating"),
+                      "apps": best_rated.get("apps")} if best_rated else None,
+        "teamAvgRating": team_avg,
+    }
+
+
+def fill_player_summary(test):
+    """Adds result.playerSummary to runs that have result.players but no summary."""
+    for run in as_list(test.get("runs")):
+        result = as_dict(as_dict(run).get("result"))
+        if result and isinstance(result.get("players"), list) and not isinstance(result.get("playerSummary"), dict):
+            summary = player_summary(result["players"])
+            if summary:
+                result["playerSummary"] = summary
+
+
 def league_finish(run):
     """(final league position, league size) from the run's result, or (None, None)."""
     result = as_dict(run.get("result"))
@@ -307,6 +348,7 @@ def by_tier(test):
             "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
             "diamond": run.get("diamond") if isinstance(run.get("diamond"), dict) else None,
         }
+        out[tier].update(finish_fields(run))
     return out
 
 
@@ -344,7 +386,17 @@ def by_club(test):
             "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
             "diamond": run.get("diamond") if isinstance(run.get("diamond"), dict) else None,
         })
+        clubs[-1].update(finish_fields(run))
     return clubs
+
+
+def finish_fields(run):
+    """finalPosition / finalLeagueSize: as exported on the run, else from its league competition."""
+    position, size = positive_int(run.get("finalPosition")), positive_int(run.get("finalLeagueSize"))
+    if position is None:
+        position, computed_size = league_finish(run)
+        size = size or computed_size
+    return {"finalPosition": position, "finalLeagueSize": size}
 
 
 def formation_only(test):
@@ -422,6 +474,7 @@ def build(repo, out):
     for key, (folder, test, _) in sorted(by_key.items()):
         fill_predictions(test, world_uid, predictions)
         fill_diamond(test)
+        fill_player_summary(test)
         target = data / key
         target.mkdir()
         images = images_of(folder)
@@ -436,7 +489,8 @@ def build(repo, out):
             run = as_dict(run)
             index = run.get("index")
             run_images = images.get(index, {}) if isinstance(index, int) else {}
-            finish, finish_size = league_finish(run)
+            fields = finish_fields(run)
+            finish, finish_size = fields["finalPosition"], fields["finalLeagueSize"]
             runs.append({
                 "index": index,
                 "kind": run.get("kind"),

@@ -38,7 +38,10 @@ survive a database reset. Nothing under `tests/` is edited by hand.
 
    A test whose JSON cannot be read is skipped with a warning. Runs without a media prediction
    (`predictedPosition`, `leagueSize`) get it from `baseline/clubs.json` by `teamId`, unless the
-   test's `baselineUid` differs from `baseline/meta.json`.
+   test's `baselineUid` differs from `baseline/meta.json`. A run with `result.players` but no
+   `result.playerSummary` gets the summary computed (top scorer, top assists, best rated, team
+   average rating). `byTier` / `byClub` entries carry `finalPosition` / `finalLeagueSize` and
+   their `diamond` block (`position` / `of`).
 3. The workflow publishes `_site/` to GitHub Pages. The site reads only those static files; there
    is no backend. A run without screenshots is drawn from the data (pitch with the eleven and
    the team instructions, full schedule, competition overview).

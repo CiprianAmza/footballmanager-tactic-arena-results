@@ -106,6 +106,50 @@
     return value && typeof value === 'object' && A.isNum(value.pts) ? value : null;
   }
 
+  /** The byTier / byClub entry of a club choice; null for the averages. */
+  function entryOf(test, team) {
+    if (team.tier) return (test.byTier && test.byTier[team.tier]) || null;
+    if (team.teamId !== undefined) return (test.byClub || []).filter(function (c) { return c && c.teamId === team.teamId; })[0] || null;
+    return null;
+  }
+
+  var TIER_ORDER = ['TOP', 'MID', 'BOTTOM'];
+
+  /** League place for the table: {text, sort, cls}; for "All reference clubs" the three places "1 · 11 · 17". */
+  function leaguePos(test, team) {
+    if (team.key === 'all') {
+      if (state.cat !== 'general') return null;
+      var places = TIER_ORDER.map(function (t) { var e = test.byTier && test.byTier[t]; return e && A.isNum(e.finalPosition) ? e.finalPosition : null; });
+      var known = places.filter(function (p) { return p !== null; });
+      if (!known.length) return null;
+      return { text: places.map(function (p) { return p === null ? '—' : p; }).join(' · '),
+        sort: known.reduce(function (a, b) { return a + b; }, 0) / known.length, cls: null,
+        title: 'Final league places: top · mid-table · bottom club' };
+    }
+    var e = entryOf(test, team);
+    if (!e || !A.isNum(e.finalPosition)) return null;
+    var cls = null, title = null;
+    if (A.isNum(e.predictedPosition)) {
+      if (e.finalPosition < e.predictedPosition) { cls = 'ta-pos'; title = 'Better than predicted (' + e.predictedPosition + ')'; }
+      else if (e.finalPosition > e.predictedPosition) { cls = 'ta-neg'; title = 'Worse than predicted (' + e.predictedPosition + ')'; }
+    }
+    return { text: A.placeText(e.finalPosition, e.finalLeagueSize), sort: e.finalPosition, cls: cls, title: title };
+  }
+
+  /** Diamond League place: the chosen club's, or the top club's for the general average. */
+  function diamondPos(test, team) {
+    var e;
+    if (team.key === 'all') {
+      if (state.cat !== 'general') return null;
+      e = test.byTier && test.byTier.TOP;
+    } else {
+      e = entryOf(test, team);
+    }
+    var d = e && e.diamond;
+    if (!d || !A.isNum(d.position)) return null;
+    return { text: A.placeText(d.position, d.of), sort: d.position };
+  }
+
   function hasDiamond() {
     return catTests().some(function (test) {
       if (test.diamond) return true;
@@ -134,6 +178,8 @@
   function value(test, team) {
     if (state.sortKey === 'uploaded') return uploaded(test);
     if (state.sortKey === 'dl') return pct(diamondOf(test, team, state.split));
+    if (state.sortKey === 'lpos') { var lp = leaguePos(test, team); return lp ? lp.sort : null; }
+    if (state.sortKey === 'dlpos') { var dp = diamondPos(test, team); return dp ? dp.sort : null; }
     var split = splitOf(test, team, state.split);
     if (!split) return null;
     if (state.sortKey === 'pts') return points(split, team);
@@ -161,7 +207,7 @@
 
   function sortBy(key) {
     if (state.sortKey === key) state.sortDesc = !state.sortDesc;
-    else { state.sortKey = key; state.sortDesc = key !== 'ga' && key !== 'xga'; }
+    else { state.sortKey = key; state.sortDesc = ['ga', 'xga', 'lpos', 'dlpos'].indexOf(key) < 0; }
     render();
   }
 
@@ -297,13 +343,26 @@
 
   /* ---------- table ---------- */
 
-  function renderHead(clubs) {
+  /** Which optional columns the current category and team choice have data for. */
+  function optionalColumns(team) {
+    var tests = catTests();
+    return {
+      lpos: tests.some(function (t) { return leaguePos(t, team) !== null; }),
+      dl: hasDiamond(),
+      dlpos: tests.some(function (t) { return diamondPos(t, team) !== null; })
+    };
+  }
+
+  function renderHead(clubs, team) {
     var head = document.getElementById('head-row');
     head.textContent = '';
     (clubs ? ['Thread', 'Formation', 'Owner', 'Club', 'League'] : ['Thread', 'Formation', 'Owner']).forEach(function (label) {
       head.appendChild(h('th', { class: 'ta-left', text: label }));
     });
-    NUMERIC.concat(hasDiamond() ? [{ key: 'dl', label: 'Diamond League' }] : [])
+    var opt = optionalColumns(team);
+    (opt.lpos ? [{ key: 'lpos', label: 'League pos' }] : []).concat(NUMERIC)
+      .concat(opt.dl ? [{ key: 'dl', label: 'Diamond League' }] : [])
+      .concat(opt.dlpos ? [{ key: 'dlpos', label: 'DL pos' }] : [])
       .concat([{ key: 'uploaded', label: 'Uploaded' }]).forEach(function (column) {
       head.appendChild(h('th', {
         class: 'sortable' + (state.sortKey === column.key ? ' sorted' : ''),
@@ -317,8 +376,9 @@
     var body = document.getElementById('rows');
     body.textContent = '';
     var tests = sortedTests(team);
-    var diamond = hasDiamond();
-    var columns = NUMERIC.length + (clubs ? 6 : 4) + (diamond ? 1 : 0);
+    var opt = optionalColumns(team);
+    var diamond = opt.dl;
+    var columns = NUMERIC.length + (clubs ? 6 : 4) + (opt.dl ? 1 : 0) + (opt.lpos ? 1 : 0) + (opt.dlpos ? 1 : 0);
     if (!tests.length) {
       body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: columns,
         text: catTests().length ? 'No test matches this filter.' : 'No tests yet.' })));
@@ -335,6 +395,10 @@
         h('td', { class: 'ta-left', text: A.show(test.owner) }),
         clubs ? h('td', { class: 'ta-left' }, A.show(test.teamName), prediction(test)) : null,
         clubs ? h('td', { class: 'ta-left', text: A.show(test.leagueName) }) : null);
+      if (opt.lpos) {
+        var lp = leaguePos(test, team);
+        tr.appendChild(h('td', { class: lp ? lp.cls : 'ta-muted', title: lp ? lp.title : null, text: lp ? lp.text : '—' }));
+      }
       var s = splitOf(test, team, state.split);
       if (s) {
         tr.appendChild(h('td', { text: A.show(s.pld) }));
@@ -353,6 +417,10 @@
         var cell = h('td', { class: dl ? 'ta-strong' : 'ta-muted', text: dl ? A.pts(dl) : '—' });
         if (dl && pct(dl) !== null) cell.appendChild(h('span', { class: 'ta-small pct', text: ' ' + pct(dl) + '%' }));
         tr.appendChild(cell);
+      }
+      if (opt.dlpos) {
+        var dp = diamondPos(test, team);
+        tr.appendChild(h('td', { class: dp ? null : 'ta-muted', text: dp ? dp.text : '—' }));
       }
       tr.appendChild(h('td', { text: A.formatDate(test.finishedAt || test.createdAt) }));
       body.appendChild(tr);
@@ -412,7 +480,12 @@
     renderCards();
     renderTeams(team);
     var clubs = hasClubs();
-    renderHead(clubs);
+    var opt = optionalColumns(team);
+    if ((state.sortKey === 'lpos' && !opt.lpos) || (state.sortKey === 'dlpos' && !opt.dlpos) || (state.sortKey === 'dl' && !opt.dl)) {
+      state.sortKey = 'pts';
+      state.sortDesc = true;
+    }
+    renderHead(clubs, team);
     renderRows(team, clubs);
     markActive('#tabs button', 'data-split', state.split);
     writeAddress();
