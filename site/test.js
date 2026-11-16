@@ -221,6 +221,8 @@
   function isLeague(comp) { return !isDiamond(comp) && (comp.kind === 'LEAGUE' || comp.typeId === 1 || comp.typeId === 3); }
 
   function isDiamondMatch(m, result) {
+    if (typeof m.competitionKind === 'string' && m.competitionKind) return m.competitionKind.toUpperCase() === 'DIAMOND';
+    if (result.diamondLeagueId !== undefined && result.diamondLeagueId !== null && m.competitionId === result.diamondLeagueId) return true;
     if (m.competitionTypeId === 7 || m.diamond === true || /diamond/i.test(String(m.competitionType || ''))) return true;
     return list(result.competitions).map(obj).filter(isDiamond).some(function (comp) {
       return (comp.competitionId !== undefined && comp.competitionId === m.competitionId) ||
@@ -294,7 +296,7 @@
       var body = h('div', { class: 'comp-body' });
       if (isDiamond(comp)) {
         var d = obj(diamond.overall);
-        var size = comp.totalTeams || diamond.of || standingsOf(comp).length;
+        var size = comp.of || comp.totalTeams || diamond.of || list(result.diamondTable).length || standingsOf(comp).length;
         var position = A.isNum(comp.position) ? comp.position : diamond.position;
         var points = A.isNum(comp.points) ? comp.points : d.pts;
         body.appendChild(h('div', { class: 'comp-stats' },
@@ -349,8 +351,11 @@
     if (table.length) {
       standingsTable(table, A.show(result.leagueName) + ' · final table', result.teamId).forEach(function (el) { panel.appendChild(el); });
     }
-    comps.filter(isDiamond).forEach(function (comp) {
-      var rows = standingsOf(comp);
+    var diamondComps = comps.filter(isDiamond);
+    var diamondTable = list(result.diamondTable).filter(function (r) { return r && typeof r === 'object'; });
+    if (diamondTable.length && !diamondComps.length) diamondComps = [{ name: 'Diamond League' }];
+    diamondComps.forEach(function (comp, i) {
+      var rows = i === 0 && diamondTable.length ? diamondTable : standingsOf(comp);
       if (!rows.length) return;
       var title = (comp.name || comp.competitionName || 'Diamond League') + ' · final table';
       var space = h('div', { style: 'margin-top:16px' });

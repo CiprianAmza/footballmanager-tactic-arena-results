@@ -157,7 +157,12 @@ def is_diamond_comp(comp):
             or "DIAMOND" in str(comp.get("kind") or "").upper())
 
 
-def is_diamond_match(match, comps):
+def is_diamond_match(match, comps, league_id=None):
+    kind = match.get("competitionKind")
+    if isinstance(kind, str) and kind:
+        return kind.upper() == "DIAMOND"
+    if league_id is not None and match.get("competitionId") == league_id:
+        return True
     if match.get("competitionTypeId") == 7 or match.get("diamond") is True \
             or "DIAMOND" in str(match.get("competitionType") or "").upper():
         return True
@@ -199,21 +204,22 @@ def run_diamond(run):
         return out
     result = as_dict(run.get("result"))
     comps = [as_dict(c) for c in as_list(result.get("competitions")) if is_diamond_comp(as_dict(c))]
-    matches = [as_dict(m) for m in as_list(result.get("matches")) if is_diamond_match(as_dict(m), comps)]
+    matches = [as_dict(m) for m in as_list(result.get("matches"))
+               if is_diamond_match(as_dict(m), comps, result.get("diamondLeagueId"))]
     if not matches:
         return None
     overall = season_split(matches)
     if overall is None:
         return None
     comp = comps[0] if comps else {}
-    standings = next((as_list(comp.get(key)) for key in ("standings", "table", "leagueTable", "groupStandings")
-                      if as_list(comp.get(key))), [])
+    standings = as_list(result.get("diamondTable")) or next(
+        (as_list(comp.get(key)) for key in ("standings", "table", "leagueTable", "groupStandings") if as_list(comp.get(key))), [])
     return {
         "overall": overall,
         "home": season_split([m for m in matches if m.get("homeOrAway") == "H"]),
         "away": season_split([m for m in matches if m.get("homeOrAway") == "A"]),
         "position": positive_int(comp.get("position")),
-        "of": positive_int(comp.get("totalTeams")) or (len(standings) or None),
+        "of": positive_int(comp.get("of")) or positive_int(comp.get("totalTeams")) or (len(standings) or None),
     }
 
 
