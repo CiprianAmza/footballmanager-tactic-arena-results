@@ -504,7 +504,9 @@
     if (test.message) page.appendChild(h('p', { class: 'ta-error', text: test.message }));
 
     page.appendChild(h('section', { class: 'ta-card' },
-      A.resultsBlock(test.results, 'Results · reference clubs', 'Available when the three reference runs have finished.')));
+      A.resultsBlock(test.results,
+        String(test.category || '').toUpperCase() === 'DIAMOND' ? 'Results · Diamond League clubs' : 'Results · reference clubs',
+        'Available when the reference runs have finished.')));
     var clubs = runsTable(test, runImages);
     page.appendChild(clubs);
     clubs.__restore();

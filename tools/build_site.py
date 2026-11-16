@@ -73,8 +73,7 @@ def split_or_none(results):
         return None
     out = {"basedOn": results.get("basedOn")}
     for name in SPLITS:
-        split = results.get(name)
-        out[name] = split if isinstance(split, dict) else None
+        out[name] = with_pts_pct(results.get(name))
     return out
 
 
@@ -161,6 +160,93 @@ def league_finish(run):
             size = positive_int(comp.get("totalTeams")) or len(as_list(result.get("leagueTable"))) or None
             return positive_int(comp.get("position")), size
     return None, None
+
+
+TIERS = ("TOP", "MID", "BOTTOM")
+# Team instructions and their defaults (docs/TACTIC_ARENA_API.md of the backend); null = default.
+DEFAULT_INSTRUCTIONS = {
+    "mentality": "Balanced", "inPossession": "Standard", "passingType": "Normal", "tempo": "Standard",
+    "timeWasting": "Sometimes", "defensiveLine": "Standard", "pressing": "Normal", "width": "Balanced",
+    "dribbling": "Standard", "foulFrequency": "Normal", "foulHardness": "Medium",
+    "tempoFragmentation": "Normal", "widePlay": "Shoot", "transition": "Balanced", "recovery": "Standard",
+}
+
+
+def by_tier(test):
+    """{TOP|MID|BOTTOM: {...}} from the reference runs: their `tier`, else their order (top, mid, bottom)."""
+    refs = [as_dict(run) for run in as_list(test.get("runs"))
+            if str(as_dict(run).get("kind") or "").startswith("REFERENCE")]
+    refs.sort(key=lambda run: run.get("index") if isinstance(run.get("index"), int) else 99)
+    out = {}
+    for position, run in enumerate(refs):
+        tier = str(run.get("tier") or "").upper()
+        if tier not in TIERS:
+            tier = TIERS[position] if position < len(TIERS) else None
+        if not tier or tier in out:
+            continue
+        stats = as_dict(run.get("stats"))
+        out[tier] = {
+            "teamId": run.get("teamId"),
+            "teamName": run.get("teamName"),
+            "predictedPosition": positive_int(run.get("predictedPosition")),
+            "leagueSize": positive_int(run.get("leagueSize")),
+            "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
+        }
+    return out
+
+
+def with_pts_pct(split):
+    """The split with ptsPct (share of the maximum points, 0-100, one decimal) when it can be known."""
+    if not isinstance(split, dict):
+        return None
+    if not isinstance(split.get("ptsPct"), (int, float)):
+        pts, top = split.get("pts"), split.get("ptsMax")
+        if isinstance(pts, (int, float)) and isinstance(top, (int, float)) and top > 0:
+            split = dict(split, ptsPct=round(pts * 100.0 / top, 1))
+    return split
+
+
+def category_of(test):
+    value = str(test.get("category") or "GENERAL").upper()
+    return value if value in ("GENERAL", "DIAMOND") else "GENERAL"
+
+
+def by_club(test):
+    """Every reference run of the test with its figures, in run order."""
+    refs = [as_dict(run) for run in as_list(test.get("runs"))
+            if str(as_dict(run).get("kind") or "").startswith("REFERENCE")]
+    refs.sort(key=lambda run: run.get("index") if isinstance(run.get("index"), int) else 99)
+    clubs = []
+    for run in refs:
+        stats = as_dict(run.get("stats"))
+        clubs.append({
+            "teamId": run.get("teamId"),
+            "teamName": run.get("teamName"),
+            "tier": run.get("tier"),
+            "label": run.get("label"),
+            "predictedPosition": positive_int(run.get("predictedPosition")),
+            "leagueSize": positive_int(run.get("leagueSize")),
+            "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
+        })
+    return clubs
+
+
+def formation_only(test):
+    """True when the tactic differs from the base only by its formation (default instructions, no roles)."""
+    if str(test.get("name") or "").startswith("Formation "):
+        return True
+    tactic = as_dict(test.get("tactic"))
+    if not tactic:
+        return False
+    for field, default in DEFAULT_INSTRUCTIONS.items():
+        value = tactic.get(field)
+        if value is not None and value != default:
+            return False
+    for slot in as_list(tactic.get("formationDataList")):
+        slot = as_dict(slot)
+        if slot.get("role") or slot.get("duty") or slot.get("instructions") or slot.get("specialRole"):
+            return False
+    return True
 
 
 def load_test(folder):
@@ -269,6 +355,10 @@ def build(repo, out):
             "finishedAt": test.get("finishedAt"),
             "results": split_or_none(test.get("results")),
             "chosen": split_or_none(test.get("chosen")),
+            "category": category_of(test),
+            "byTier": by_tier(test) if category_of(test) == "GENERAL" else {},
+            "byClub": by_club(test),
+            "formationOnly": formation_only(test),
             "runs": runs,
         })
 
@@ -282,6 +372,8 @@ def build(repo, out):
     # The reference clubs of the newest test that has them (they are the same for every test).
     reference_clubs = []
     for row in rows:
+        if row.get("category") != "GENERAL":
+            continue
         names = [run.get("teamName") for run in row["runs"]
                  if str(run.get("kind") or "").startswith("REFERENCE") and run.get("teamName")]
         if names:

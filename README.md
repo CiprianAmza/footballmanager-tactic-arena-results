@@ -30,7 +30,9 @@ survive a database reset. Nothing under `tests/` is edited by hand.
    every folder holding a `result.json.gz` (at the root, under `tests/` or deeper), and writes:
    - the pages from `site/`;
    - `data/index.json`: one leaderboard row per test (Overall / Home / Away figures, engine,
-     dates and the screenshots each run has);
+     dates, the screenshots each run has, `category` (`GENERAL` / `DIAMOND`), `byTier` (the
+     top / mid-table / bottom reference club of a general test: the runs' `tier`, else their
+     order) and `byClub` (every reference club with its figures; `ptsPct` added when missing));
    - `data/<key>/result.json`: the full test as plain JSON, plus its screenshots
      (`<key>` = the test `uid`, or the folder name when there is none).
 

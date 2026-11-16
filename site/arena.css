@@ -30,6 +30,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--fm-page-bg); color: var(--fm-text); font-family: var(--fm-font); font-size: 15px; line-height: 1.4; }
 a { color: var(--fm-info); }
@@ -161,6 +162,34 @@ a { color: var(--fm-info); }
 .kv dd { margin: 0; color: var(--fm-heading); font-weight: 700; }
 .ta-subhead { margin: 0 0 8px; color: var(--fm-text-dim); font-size: 0.75em; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
 
+/* Leaderboard: categories, best-of cards, team selector */
+.ta-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.ta-cats[hidden] { display: none; }
+.ta-cats button, .ta-chips button { background: var(--fm-bg-row); color: var(--fm-text-dim); border: 1px solid var(--fm-border);
+  border-radius: 999px; padding: 6px 14px; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 0.88em; }
+.ta-cats button { font-size: 0.95em; padding: 8px 18px; border-radius: var(--fm-radius); }
+.ta-cats button.active, .ta-chips button.active { background: var(--fm-accent-soft); color: var(--fm-accent); border-color: var(--fm-accent); }
+.ta-cats button:hover, .ta-chips button:hover { color: var(--fm-heading); }
+.best-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 14px; }
+.best-cards.compact { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.best-card { display: flex; flex-direction: column; gap: 3px; min-width: 0; text-align: left; cursor: pointer;
+  background: var(--fm-bg-elevated); border: 1px solid var(--fm-border); border-radius: var(--fm-radius-lg); padding: 10px 12px; }
+.best-card:hover { border-color: var(--fm-text-faded); }
+.best-card.active { border-color: var(--fm-accent); box-shadow: 0 0 0 1px var(--fm-accent) inset; }
+.best-title { color: var(--fm-accent); font-size: 0.72em; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.best-name { color: var(--fm-info); font-weight: 800; text-decoration: none; overflow-wrap: anywhere; }
+.best-name:hover { text-decoration: underline; }
+.best-meta { color: var(--fm-text-dim); font-size: 0.85em; }
+.best-meta strong { color: var(--fm-heading); }
+.best-cards.compact .best-card { padding: 8px 10px; }
+.best-cards.compact .best-name { font-size: 0.9em; }
+.ta-team-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.ta-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ta-chips button { max-width: 100%; white-space: normal; text-align: left; }
+#team-note { margin: 4px 0 10px; min-height: 1em; }
+.ta-filter input { accent-color: var(--fm-accent); }
+.pct { font-weight: 600; }
+
 /* Tested clubs: one row per run, the details open under it */
 .runs-card .ta-table-wrap { border-radius: var(--fm-radius); margin-top: 8px; }
 .runs-table tr.run-row { cursor: pointer; }
@@ -182,6 +211,9 @@ a { color: var(--fm-info); }
   .ta-tabs button { padding: 8px 12px; }
   .shirt { width: 26px; height: 26px; font-size: 0.7em; border-width: 2px; }
   .slot-role { display: none; }
+  .best-cards, .best-cards.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .best-card { padding: 8px 10px; }
+  .best-meta { font-size: 0.78em; }
   .runs-table .opt { display: none; }
   .runs-table td.cups { max-width: 140px; }
   .run-detail-inner { padding: 10px; }
