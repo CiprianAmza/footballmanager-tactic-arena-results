@@ -151,11 +151,119 @@ def fill_predictions(test, world_uid, table):
                 run["leagueSize"] = size
 
 
+def is_diamond_comp(comp):
+    """The Diamond League (competition type 7) in a run's competition list."""
+    return (comp.get("typeId") == 7 or comp.get("competitionTypeId") == 7 or comp.get("diamond") is True
+            or "DIAMOND" in str(comp.get("kind") or "").upper())
+
+
+def is_diamond_match(match, comps):
+    if match.get("competitionTypeId") == 7 or match.get("diamond") is True \
+            or "DIAMOND" in str(match.get("competitionType") or "").upper():
+        return True
+    for comp in comps:
+        if comp.get("competitionId") is not None and comp.get("competitionId") == match.get("competitionId"):
+            return True
+        if match.get("competitionName") and match.get("competitionName") in (comp.get("name"), comp.get("competitionName")):
+            return True
+    return False
+
+
+def season_split(matches):
+    """League-style figures of one season from played matches (totals, as a single run's stats)."""
+    played = [m for m in matches if m.get("resultOutcome") in ("W", "D", "L")
+              and isinstance(m.get("teamGoals"), int) and isinstance(m.get("opponentGoals"), int)]
+    if not played:
+        return None
+    w = sum(1 for m in played if m["resultOutcome"] == "W")
+    d = sum(1 for m in played if m["resultOutcome"] == "D")
+    gf = sum(m["teamGoals"] for m in played)
+    ga = sum(m["opponentGoals"] for m in played)
+    with_xg = [m for m in played if isinstance(m.get("xgFor"), (int, float)) and isinstance(m.get("xgAgainst"), (int, float))]
+    xgf = round(sum(m["xgFor"] for m in with_xg)) if with_xg else None
+    xga = round(sum(m["xgAgainst"] for m in with_xg)) if with_xg else None
+    return with_pts_pct({
+        "pld": len(played), "pts": 3 * w + d, "ptsMax": 3 * len(played),
+        "w": w, "d": d, "l": len(played) - w - d, "gf": gf, "ga": ga, "gd": gf - ga,
+        "xgf": xgf, "xga": xga, "xgd": None if xgf is None else xgf - xga,
+    })
+
+
+def run_diamond(run):
+    """The run's Diamond League figures: as exported, else computed from its schedule; None when it does not play in it."""
+    given = run.get("diamond")
+    if isinstance(given, dict):
+        out = dict(given)
+        for name in SPLITS:
+            out[name] = with_pts_pct(given.get(name))
+        return out
+    result = as_dict(run.get("result"))
+    comps = [as_dict(c) for c in as_list(result.get("competitions")) if is_diamond_comp(as_dict(c))]
+    matches = [as_dict(m) for m in as_list(result.get("matches")) if is_diamond_match(as_dict(m), comps)]
+    if not matches:
+        return None
+    overall = season_split(matches)
+    if overall is None:
+        return None
+    comp = comps[0] if comps else {}
+    standings = next((as_list(comp.get(key)) for key in ("standings", "table", "leagueTable", "groupStandings")
+                      if as_list(comp.get(key))), [])
+    return {
+        "overall": overall,
+        "home": season_split([m for m in matches if m.get("homeOrAway") == "H"]),
+        "away": season_split([m for m in matches if m.get("homeOrAway") == "A"]),
+        "position": positive_int(comp.get("position")),
+        "of": positive_int(comp.get("totalTeams")) or (len(standings) or None),
+    }
+
+
+def average_splits(splits):
+    """Average of per-run splits, like the backend's results block: pld summed, the rest averaged."""
+    splits = [s for s in splits if isinstance(s, dict) and isinstance(s.get("pld"), (int, float))]
+    if not splits:
+        return None
+    n = len(splits)
+
+    def mean(field):
+        values = [s.get(field) for s in splits if isinstance(s.get(field), (int, float))]
+        return round(sum(values) / len(values)) if values else None
+
+    out = {"pld": int(sum(s["pld"] for s in splits)), "ptsMax": round(sum(s["pld"] for s in splits) / n) * 3}
+    for field in ("pts", "w", "d", "l", "gf", "ga", "gd", "xgf", "xga", "xgd"):
+        out[field] = mean(field)
+    return with_pts_pct(out)
+
+
+def test_diamond(test):
+    """The test's Diamond League block: as exported, else the average of the reference runs that play in it."""
+    given = test.get("diamond")
+    if isinstance(given, dict):
+        out = dict(given)
+        for name in SPLITS:
+            out[name] = with_pts_pct(given.get(name))
+        return out
+    refs = [as_dict(run) for run in as_list(test.get("runs"))
+            if str(as_dict(run).get("kind") or "").startswith("REFERENCE") and isinstance(as_dict(run).get("diamond"), dict)]
+    if not refs:
+        return None
+    return dict({"basedOn": len(refs)}, **{name: average_splits([r["diamond"].get(name) for r in refs]) for name in SPLITS})
+
+
+def fill_diamond(test):
+    """Adds `diamond` to the runs and to the test when the export does not have it."""
+    for run in as_list(test.get("runs")):
+        if isinstance(run, dict):
+            run["diamond"] = run_diamond(run)
+    test["diamond"] = test_diamond(test)
+
+
 def league_finish(run):
     """(final league position, league size) from the run's result, or (None, None)."""
     result = as_dict(run.get("result"))
     for comp in as_list(result.get("competitions")):
         comp = as_dict(comp)
+        if is_diamond_comp(comp):
+            continue
         if comp.get("kind") == "LEAGUE" or comp.get("typeId") in (1, 3):
             size = positive_int(comp.get("totalTeams")) or len(as_list(result.get("leagueTable"))) or None
             return positive_int(comp.get("position")), size
@@ -191,6 +299,7 @@ def by_tier(test):
             "predictedPosition": positive_int(run.get("predictedPosition")),
             "leagueSize": positive_int(run.get("leagueSize")),
             "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
+            "diamond": run.get("diamond") if isinstance(run.get("diamond"), dict) else None,
         }
     return out
 
@@ -227,6 +336,7 @@ def by_club(test):
             "predictedPosition": positive_int(run.get("predictedPosition")),
             "leagueSize": positive_int(run.get("leagueSize")),
             "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
+            "diamond": run.get("diamond") if isinstance(run.get("diamond"), dict) else None,
         })
     return clubs
 
@@ -305,6 +415,7 @@ def build(repo, out):
     rows = []
     for key, (folder, test, _) in sorted(by_key.items()):
         fill_predictions(test, world_uid, predictions)
+        fill_diamond(test)
         target = data / key
         target.mkdir()
         images = images_of(folder)
@@ -355,6 +466,7 @@ def build(repo, out):
             "finishedAt": test.get("finishedAt"),
             "results": split_or_none(test.get("results")),
             "chosen": split_or_none(test.get("chosen")),
+            "diamond": test.get("diamond") if isinstance(test.get("diamond"), dict) else None,
             "category": category_of(test),
             "byTier": by_tier(test) if category_of(test) == "GENERAL" else {},
             "byClub": by_club(test),

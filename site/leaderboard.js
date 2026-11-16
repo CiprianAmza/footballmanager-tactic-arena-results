@@ -94,6 +94,25 @@
     return test.results;
   }
 
+  /** Diamond League figures for a test and a team choice (null when that club does not play in it). */
+  function diamondOf(test, team, split) {
+    var block;
+    if (team.tier) block = test.byTier && test.byTier[team.tier] && test.byTier[team.tier].diamond;
+    else if (team.teamId !== undefined) {
+      var club = (test.byClub || []).filter(function (c) { return c && c.teamId === team.teamId; })[0];
+      block = club && club.diamond;
+    } else block = test.diamond;
+    var value = block && block[split];
+    return value && typeof value === 'object' && A.isNum(value.pts) ? value : null;
+  }
+
+  function hasDiamond() {
+    return catTests().some(function (test) {
+      if (test.diamond) return true;
+      return (test.byClub || []).some(function (c) { return c && c.diamond; });
+    });
+  }
+
   function splitOf(test, team, split) {
     var results = resultsOf(test, team);
     var value = results && results[split];
@@ -114,6 +133,7 @@
 
   function value(test, team) {
     if (state.sortKey === 'uploaded') return uploaded(test);
+    if (state.sortKey === 'dl') return pct(diamondOf(test, team, state.split));
     var split = splitOf(test, team, state.split);
     if (!split) return null;
     if (state.sortKey === 'pts') return points(split, team);
@@ -197,8 +217,8 @@
       var s = test.results && test.results.overall;
       if (s && A.isNum(s.pld)) matches += s.pld;
     });
-    document.getElementById('summary').textContent =
-      done.length + ' tactics have been tested. Total number of matches played is ' + matches + '.';
+    document.getElementById('summary').textContent = state.board.tests.length === 0 ? 'No tests yet.'
+      : done.length + ' tactics have been tested. Total number of matches played is ' + matches + '.';
     var note = document.getElementById('pts-note');
     var names = teams().filter(function (t) { return t.clubName; }).map(function (t) { return t.clubName; });
     if (state.cat === 'diamond') {
@@ -247,6 +267,32 @@
       }
       box.appendChild(card);
     });
+    if (hasDiamond()) box.appendChild(diamondCard());
+  }
+
+  /** "Best in the Diamond League": highest share of Diamond League points (reference average), then goal difference. */
+  function diamondCard() {
+    var all = { key: 'all' };
+    var winner = null, winnerPct = null, winnerGd = null;
+    visibleTests().forEach(function (test) {
+      var s = diamondOf(test, all, 'overall');
+      var p = pct(s);
+      if (p === null) return;
+      var gd = A.isNum(s.gd) ? s.gd : -Infinity;
+      if (!winner || p > winnerPct || (p === winnerPct && gd > winnerGd)) { winner = { test: test, split: s }; winnerPct = p; winnerGd = gd; }
+    });
+    var card = h('div', { class: 'best-card diamond-card', title: 'Sort the table by Diamond League points',
+      onclick: function () { state.sortKey = 'dl'; state.sortDesc = true; render(); } },
+      h('span', { class: 'best-title', text: 'Best in the Diamond League' }));
+    if (winner) {
+      card.appendChild(h('a', { class: 'best-name', href: A.testUrl(winner.test.key), text: A.show(winner.test.name),
+        onclick: function (event) { event.stopPropagation(); } }));
+      card.appendChild(h('span', { class: 'best-meta' }, A.formationLabel(winner.test.formation) + ' · ',
+        h('strong', { text: A.pts(winner.split) }), ' (' + winnerPct + '%) · GD ' + A.signed(winner.split.gd)));
+    } else {
+      card.appendChild(h('span', { class: 'ta-muted', text: 'No results yet' }));
+    }
+    return card;
   }
 
   /* ---------- table ---------- */
@@ -257,7 +303,8 @@
     (clubs ? ['Thread', 'Formation', 'Owner', 'Club', 'League'] : ['Thread', 'Formation', 'Owner']).forEach(function (label) {
       head.appendChild(h('th', { class: 'ta-left', text: label }));
     });
-    NUMERIC.concat([{ key: 'uploaded', label: 'Uploaded' }]).forEach(function (column) {
+    NUMERIC.concat(hasDiamond() ? [{ key: 'dl', label: 'Diamond League' }] : [])
+      .concat([{ key: 'uploaded', label: 'Uploaded' }]).forEach(function (column) {
       head.appendChild(h('th', {
         class: 'sortable' + (state.sortKey === column.key ? ' sorted' : ''),
         text: column.label + arrow(column.key),
@@ -270,10 +317,11 @@
     var body = document.getElementById('rows');
     body.textContent = '';
     var tests = sortedTests(team);
-    var columns = NUMERIC.length + (clubs ? 6 : 4);
+    var diamond = hasDiamond();
+    var columns = NUMERIC.length + (clubs ? 6 : 4) + (diamond ? 1 : 0);
     if (!tests.length) {
       body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: columns,
-        text: catTests().length ? 'No test matches this filter.' : 'No tactic has been tested yet.' })));
+        text: catTests().length ? 'No test matches this filter.' : 'No tests yet.' })));
       return;
     }
     tests.forEach(function (test) {
@@ -299,6 +347,12 @@
         tr.appendChild(h('td', { class: A.signClass(s.xgd), text: A.signed(s.xgd) }));
       } else {
         NUMERIC.forEach(function () { tr.appendChild(h('td', { class: 'ta-muted', text: '—' })); });
+      }
+      if (diamond) {
+        var dl = diamondOf(test, team, state.split);
+        var cell = h('td', { class: dl ? 'ta-strong' : 'ta-muted', text: dl ? A.pts(dl) : '—' });
+        if (dl && pct(dl) !== null) cell.appendChild(h('span', { class: 'ta-small pct', text: ' ' + pct(dl) + '%' }));
+        tr.appendChild(cell);
       }
       tr.appendChild(h('td', { text: A.formatDate(test.finishedAt || test.createdAt) }));
       body.appendChild(tr);
@@ -399,6 +453,12 @@
     setupFilter();
     render();
   }).catch(function (error) {
+    if (/HTTP 404/.test(error.message)) {
+      // Nothing published yet: an empty leaderboard, not an error.
+      state.board = { tests: [], referenceClubs: [] };
+      render();
+      return;
+    }
     var box = document.getElementById('error');
     box.textContent = 'The leaderboard could not be loaded (' + error.message + ').';
     box.hidden = false;

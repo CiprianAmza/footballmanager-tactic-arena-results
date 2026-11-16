@@ -61,3 +61,7 @@ which is ignored by git; the script clears it on every build).
 In the repository on GitHub: **Settings → Pages → Build and deployment → Source: "GitHub
 Actions"**. After that every push to `main` (or a manual run of the workflow from the
 **Actions** tab) publishes the site.
+
+If the source is left on "Deploy from a branch", GitHub also runs its own "pages build and
+deployment" on every push and publishes the raw branch over the built site: the pages then load
+but `data/index.json` answers 404. Switching the source to "GitHub Actions" fixes it.

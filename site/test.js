@@ -172,15 +172,17 @@
     matches.forEach(function (m) {
       if (count[m.resultOutcome] !== undefined) count[m.resultOutcome]++;
       if (m.inRun === false) beforeRun++;
-      var type = m.competitionType === 'Cup' ? ' cup' : (m.competitionType === 'European' ? ' european' : '');
+      var diamondMatch = isDiamondMatch(m, result);
+      var type = diamondMatch ? ' diamond' : (m.competitionType === 'Cup' ? ' cup' : (m.competitionType === 'European' ? ' european' : ''));
       var venue = m.homeOrAway === 'H' ? ' home' : (m.homeOrAway === 'A' ? ' away' : '');
       var note = decidedNote(m);
       var xgFor = xg(m.xgFor), xgAgainst = xg(m.xgAgainst);
       body.appendChild(h('tr', { class: m.inRun === false ? 'before-run' : null },
         h('td', { class: 'ta-left', text: m.date || (m.day !== undefined ? 'Day ' + m.day : '—') }),
         h('td', { class: 'ta-left' },
-          h('span', { class: 'cal-badge' + type, text: String(m.competitionName || '').slice(0, 3).toUpperCase() || '—' }),
-          A.show(m.competitionName)),
+          h('span', { class: 'cal-badge' + type, title: diamondMatch ? 'Diamond League' : null,
+            text: diamondMatch ? '◆ DL' : (String(m.competitionName || '').slice(0, 3).toUpperCase() || '—') }),
+          diamondMatch && !/diamond/i.test(String(m.competitionName || '')) ? 'Diamond League' : A.show(m.competitionName)),
         h('td', { class: 'ta-left', text: m.roundLabel || (m.roundNumber !== undefined ? 'Round ' + m.roundNumber : '—') }),
         h('td', { class: 'ta-left' }, h('span', { class: 'venue' + venue,
           text: (m.homeTeamAbbr || 'TBD') + ' v ' + (m.awayTeamAbbr || 'TBD') })),
@@ -211,9 +213,59 @@
 
   /* ---------- competition overview ---------- */
 
-  function isLeague(comp) { return comp.kind === 'LEAGUE' || comp.typeId === 1 || comp.typeId === 3; }
+  /** The Diamond League (competition type 7): an extra league of the eight elite clubs. */
+  function isDiamond(comp) {
+    return comp.typeId === 7 || comp.competitionTypeId === 7 || comp.diamond === true || /diamond/i.test(String(comp.kind || ''));
+  }
+
+  function isLeague(comp) { return !isDiamond(comp) && (comp.kind === 'LEAGUE' || comp.typeId === 1 || comp.typeId === 3); }
+
+  function isDiamondMatch(m, result) {
+    if (m.competitionTypeId === 7 || m.diamond === true || /diamond/i.test(String(m.competitionType || ''))) return true;
+    return list(result.competitions).map(obj).filter(isDiamond).some(function (comp) {
+      return (comp.competitionId !== undefined && comp.competitionId === m.competitionId) ||
+        (!!m.competitionName && (comp.name === m.competitionName || comp.competitionName === m.competitionName));
+    });
+  }
+
+  /** A final table: rows with position, name, games, wins, draws, loses, goals, points. */
+  function standingsTable(rows, title, teamId) {
+    var sorted = rows.slice().sort(function (a, b) {
+      return (num(a.position) - num(b.position)) || (num(b.points) - num(a.points));
+    });
+    var body = h('tbody');
+    sorted.forEach(function (r, i) {
+      var gd = num(r.goalsFor) - num(r.goalsAgainst);
+      body.appendChild(h('tr', { class: r.teamId !== undefined && r.teamId === teamId ? 'human-team' : null },
+        h('td', { text: A.show(r.position || i + 1) }),
+        h('td', { class: 'ta-left', text: A.show(r.name || r.teamName) }),
+        h('td', { text: A.show(r.games) }), h('td', { text: A.show(r.wins) }), h('td', { text: A.show(r.draws) }),
+        h('td', { text: A.show(r.loses) }), h('td', { text: A.show(r.goalsFor) }), h('td', { text: A.show(r.goalsAgainst) }),
+        h('td', { text: gd > 0 ? '+' + gd : String(gd) }),
+        h('td', { class: 'ta-strong', text: A.show(r.points) })));
+    });
+    return [
+      h('p', { class: 'ta-subhead', text: title }),
+      h('div', { class: 'ta-scroll' }, h('table', { class: 'ta-table' },
+        h('thead', null, h('tr', null,
+          h('th', { text: '#' }), h('th', { class: 'ta-left', text: 'Team' }),
+          ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts'].map(function (label) { return h('th', { text: label }); }))),
+        body))
+    ];
+  }
+
+  /** The standings a competition item carries, if any. */
+  function standingsOf(comp) {
+    var keys = ['standings', 'table', 'leagueTable', 'groupStandings'];
+    for (var i = 0; i < keys.length; i++) {
+      var rows = list(comp[keys[i]]).filter(function (r) { return r && typeof r === 'object' && (r.name || r.teamName); });
+      if (rows.length) return rows;
+    }
+    return [];
+  }
 
   function compColor(comp) {
+    if (isDiamond(comp)) return '#0e7490';
     switch (comp.typeId) {
       case 1: return '#38003c';
       case 2: return '#e74c3c';
@@ -228,7 +280,11 @@
 
   function competitionsPanel(run, result) {
     var comps = list(result.competitions).filter(function (c) { return c && typeof c === 'object'; })
-      .slice().sort(function (a, b) { return Number(isLeague(b)) - Number(isLeague(a)); });
+      .slice().sort(function (a, b) {
+        function rank(c) { return isLeague(c) ? 0 : (isDiamond(c) ? 1 : 2); }
+        return rank(a) - rank(b);
+      });
+    var diamond = obj(run.diamond);
     var table = list(result.leagueTable).filter(function (r) { return r && typeof r === 'object'; });
     var trophies = comps.filter(function (c) { return c.trophy === true; }).map(function (c) { return c.name || c.competitionName; });
 
@@ -236,7 +292,24 @@
     comps.forEach(function (comp) {
       var name = comp.name || comp.competitionName || '—';
       var body = h('div', { class: 'comp-body' });
-      if (isLeague(comp)) {
+      if (isDiamond(comp)) {
+        var d = obj(diamond.overall);
+        var size = comp.totalTeams || diamond.of || standingsOf(comp).length;
+        var position = A.isNum(comp.position) ? comp.position : diamond.position;
+        var points = A.isNum(comp.points) ? comp.points : d.pts;
+        body.appendChild(h('div', { class: 'comp-stats' },
+          h('div', null, h('span', { class: 'comp-label', text: 'POSITION' }),
+            h('div', { class: 'comp-value' }, A.show(position), size ? h('small', { text: '/' + size }) : null)),
+          h('div', { style: 'text-align:right' }, h('span', { class: 'comp-label', text: 'POINTS' }),
+            h('div', { class: 'comp-value' }, A.show(points), A.isNum(d.ptsMax) ? h('small', { text: '/' + d.ptsMax }) : null))));
+        var wins = A.isNum(comp.wins) ? comp.wins : d.w, draws = A.isNum(comp.draws) ? comp.draws : d.d;
+        var loses = A.isNum(comp.loses) ? comp.loses : d.l;
+        var gf = A.isNum(comp.goalsFor) ? comp.goalsFor : d.gf, ga = A.isNum(comp.goalsAgainst) ? comp.goalsAgainst : d.ga;
+        var games = A.isNum(comp.games) ? comp.games : d.pld;
+        body.appendChild(h('div', { class: 'comp-row' }, h('span', { text: 'RECORD' }),
+          h('strong', { text: num(wins) + 'W ' + num(draws) + 'D ' + num(loses) + 'L' }),
+          h('small', { text: 'Goals ' + num(gf) + '–' + num(ga) + ' · ' + num(games) + ' played' })));
+      } else if (isLeague(comp)) {
         var total = comp.totalTeams || table.length;
         body.appendChild(h('div', { class: 'comp-stats' },
           h('div', null, h('span', { class: 'comp-label', text: 'POSITION' }),
@@ -274,27 +347,16 @@
       grid);
 
     if (table.length) {
-      var rows = table.slice().sort(function (a, b) {
-        return (num(a.position) - num(b.position)) || (num(b.points) - num(a.points));
-      });
-      var body = h('tbody');
-      rows.forEach(function (r, i) {
-        var gd = num(r.goalsFor) - num(r.goalsAgainst);
-        body.appendChild(h('tr', { class: r.teamId !== undefined && r.teamId === result.teamId ? 'human-team' : null },
-          h('td', { text: A.show(r.position || i + 1) }),
-          h('td', { class: 'ta-left', text: A.show(r.name || r.teamName) }),
-          h('td', { text: A.show(r.games) }), h('td', { text: A.show(r.wins) }), h('td', { text: A.show(r.draws) }),
-          h('td', { text: A.show(r.loses) }), h('td', { text: A.show(r.goalsFor) }), h('td', { text: A.show(r.goalsAgainst) }),
-          h('td', { text: gd > 0 ? '+' + gd : String(gd) }),
-          h('td', { class: 'ta-strong', text: A.show(r.points) })));
-      });
-      panel.appendChild(h('p', { class: 'ta-subhead', text: A.show(result.leagueName) + ' · final table' }));
-      panel.appendChild(h('div', { class: 'ta-scroll' }, h('table', { class: 'ta-table' },
-        h('thead', null, h('tr', null,
-          h('th', { text: '#' }), h('th', { class: 'ta-left', text: 'Team' }),
-          ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts'].map(function (label) { return h('th', { text: label }); }))),
-        body)));
+      standingsTable(table, A.show(result.leagueName) + ' · final table', result.teamId).forEach(function (el) { panel.appendChild(el); });
     }
+    comps.filter(isDiamond).forEach(function (comp) {
+      var rows = standingsOf(comp);
+      if (!rows.length) return;
+      var title = (comp.name || comp.competitionName || 'Diamond League') + ' · final table';
+      var space = h('div', { style: 'margin-top:16px' });
+      standingsTable(rows, title, result.teamId).forEach(function (el) { space.appendChild(el); });
+      panel.appendChild(space);
+    });
     return panel;
   }
 
@@ -336,7 +398,15 @@
   function runDetail(run, images) {
     var box = h('div');
     if (run.message) box.appendChild(h('p', { class: 'ta-error', text: run.message }));
-    box.appendChild(A.resultsBlock(run.stats, 'Results · ' + A.show(run.teamName), 'Available when this run has finished.'));
+    var league = A.resultsBlock(run.stats, 'League · ' + A.show(run.teamName), 'Available when this run has finished.');
+    if (diamondCell(run) !== null) {
+      var d = obj(run.diamond);
+      var place = A.placeText(d.position, d.of);
+      box.appendChild(h('div', { class: 'split-pair' }, league,
+        A.resultsBlock(d, 'Diamond League' + (place ? ' · finished ' + place : ''))));
+    } else {
+      box.appendChild(league);
+    }
     var hasResult = run.result && typeof run.result === 'object';
     if (hasResult || Object.keys(images).length) {
       var shots = h('div', { class: 'ta-shots' });
@@ -368,8 +438,17 @@
     return { position: league.position, size: size || null };
   }
 
+  /** "45 / 84 · 3 / 8" for a run that plays in the Diamond League, else null. */
+  function diamondCell(run) {
+    var d = obj(run.diamond);
+    var s = obj(d.overall);
+    if (!A.isNum(s.pts)) return null;
+    var place = A.placeText(d.position, d.of);
+    return A.pts(s) + (place ? ' · ' + place : '');
+  }
+
   function cupsText(run) {
-    return list(obj(run.result).competitions).map(obj).filter(function (comp) { return !isLeague(comp); })
+    return list(obj(run.result).competitions).map(obj).filter(function (comp) { return !isLeague(comp) && !isDiamond(comp); })
       .map(function (comp) {
         var name = comp.name || comp.competitionName || 'Cup';
         return { name: name, text: comp.trophy ? '🏆 ' + name : (comp.stageReached || comp.statusLabel || comp.currentStage || '—') };
@@ -394,7 +473,9 @@
       var kb = KIND_ORDER[b.kind] !== undefined ? KIND_ORDER[b.kind] : 9;
       return (ka - kb) || (num(a.index) - num(b.index));
     });
-    var columns = ['Club', 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD', 'Cups'];
+    var hasDiamond = runs.some(function (r) { return diamondCell(r) !== null; });
+    var columns = ['Club', 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
+      .concat(hasDiamond ? ['Diamond League'] : []).concat(['Cups']);
     var optional = { GF: 1, GA: 1, xGF: 1, xGA: 1, Role: 1 };
     var wrap = h('div', { class: 'ta-table-wrap runs-wrap' });
     var table = h('table', { class: 'ta-table runs-table' }, h('thead', null, h('tr', null, columns.map(function (label, i) {
@@ -440,6 +521,7 @@
         h('td', { class: 'opt', text: split ? A.show(split.xgf) : '—' }),
         h('td', { class: 'opt', text: split ? A.show(split.xga) : '—' }),
         h('td', { class: split ? A.signClass(split.xgd) : null, text: split ? A.signed(split.xgd) : '—' }),
+        hasDiamond ? h('td', { text: diamondCell(run) || '—' }) : null,
         h('td', { class: 'ta-left ta-small cups', title: cups.map(function (c) { return c.name + ': ' + c.text; }).join('\n') || null,
           text: cups.length ? cups.map(function (c) { return c.text; }).join(' · ') : '—' }));
       var inner = h('div', { class: 'run-detail-inner' });
@@ -504,9 +586,12 @@
     if (test.message) page.appendChild(h('p', { class: 'ta-error', text: test.message }));
 
     page.appendChild(h('section', { class: 'ta-card' },
-      A.resultsBlock(test.results,
-        String(test.category || '').toUpperCase() === 'DIAMOND' ? 'Results · Diamond League clubs' : 'Results · reference clubs',
-        'Available when the reference runs have finished.')));
+      h('div', { class: 'split-pair' },
+        A.resultsBlock(test.results,
+          String(test.category || '').toUpperCase() === 'DIAMOND' ? 'Results · Diamond League clubs' : 'Results · reference clubs',
+          'Available when the reference runs have finished.'),
+        test.diamond && obj(test.diamond).overall
+          ? A.resultsBlock(test.diamond, 'Diamond League · reference clubs that play in it') : null)));
     var clubs = runsTable(test, runImages);
     page.appendChild(clubs);
     clubs.__restore();

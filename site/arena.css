@@ -113,6 +113,8 @@ a { color: var(--fm-info); }
   text-align: center; color: #fff; background: #38003c; }
 .cal-badge.cup { background: #c0392b; }
 .cal-badge.european { background: #2e3192; }
+.cal-badge.diamond { background: #0e7490; }
+.split-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .venue { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700; background: var(--fm-bg-row); }
 .venue.home { color: var(--fm-success); }
 .venue.away { color: var(--fm-info); }
@@ -182,6 +184,8 @@ a { color: var(--fm-info); }
 .best-meta { color: var(--fm-text-dim); font-size: 0.85em; }
 .best-meta strong { color: var(--fm-heading); }
 .best-cards.compact .best-card { padding: 8px 10px; }
+.best-card.diamond-card { border-color: #0e7490; }
+.best-card.diamond-card .best-title { color: #22d3ee; }
 .best-cards.compact .best-name { font-size: 0.9em; }
 .ta-team-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
 .ta-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
