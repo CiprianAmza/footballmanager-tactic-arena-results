@@ -266,7 +266,8 @@ def fill_diamond(test):
 
 
 def match_xpts(match):
-    """Expected points of one match: `xptsFor`, else independent Poisson from its xG (goals 0..10); None without xG."""
+    """Expected points of one match: `xptsFor`, else independent Poisson from its xG (goals 0..10, the tail of 11+
+    folded into 10, as the backend does); None without xG."""
     given = match.get("xptsFor")
     if isinstance(given, (int, float)) and not isinstance(given, bool):
         return float(given)
@@ -274,7 +275,8 @@ def match_xpts(match):
     if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 for v in (xg_for, xg_against)):
         return None
     def dist(lam):
-        return [math.exp(-lam) * lam ** k / math.factorial(k) for k in range(11)]
+        probs = [math.exp(-lam) * lam ** k / math.factorial(k) for k in range(10)]
+        return probs + [max(0.0, 1.0 - sum(probs))]
     mine, theirs = dist(xg_for), dist(xg_against)
     win = sum(mine[i] * theirs[j] for i in range(11) for j in range(11) if i > j)
     draw = sum(mine[i] * theirs[i] for i in range(11))
@@ -293,9 +295,9 @@ def is_league_match(match):
 
 
 def xpts_sum(matches):
-    """Season total of the matches' expected points, one decimal; None when no match has a value."""
+    """Season total of the matches' expected points, unrounded; None when no match has a value."""
     values = [v for v in (match_xpts(m) for m in matches) if v is not None]
-    return round(sum(values), 1) if values else None
+    return sum(values) if values else None
 
 
 def run_xpts(run, diamond):
@@ -315,22 +317,32 @@ def run_xpts(run, diamond):
 
 
 def put_xpts(block, values):
-    """Sets `xpts` on the splits of a block that lack it (a value already exported wins)."""
+    """Sets `xpts` (one decimal) on the splits of a block that lack it (a value already exported wins).
+    Returns {split: value} with the unrounded values used, for the means over runs."""
+    raw = {}
     if not isinstance(block, dict):
-        return
+        return raw
     for name in SPLITS:
         split = block.get(name)
-        if isinstance(split, dict) and not isinstance(split.get("xpts"), (int, float)):
-            split["xpts"] = values.get(name) if values else None
+        if not isinstance(split, dict):
+            continue
+        given = split.get("xpts")
+        if isinstance(given, (int, float)) and not isinstance(given, bool):
+            raw[name] = given
+        else:
+            value = values.get(name) if values else None
+            raw[name] = value
+            split["xpts"] = None if value is None else round(value, 1)
+    return raw
 
 
-def mean_xpts(blocks):
-    """{split: mean xpts} over the blocks that have one, one decimal."""
+def mean_xpts(raws):
+    """{split: mean xpts} over the runs' unrounded {split: value} maps that have one."""
     out = {}
     for name in SPLITS:
-        values = [as_dict(b.get(name)).get("xpts") for b in blocks if isinstance(b, dict)]
+        values = [r.get(name) for r in raws if isinstance(r, dict)]
         values = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
-        out[name] = round(sum(values) / len(values), 1) if values else None
+        out[name] = sum(values) / len(values) if values else None
     return out
 
 
@@ -345,30 +357,31 @@ def averaged_runs(test):
 
 def fill_xpts(test):
     """Adds `xpts` to every split of the test (runs, results, chosen, diamond, byTier, byClub) that lacks it."""
+    league, diamond = {}, {}  # id(run) -> unrounded {split: xpts}
     for run in as_list(test.get("runs")):
         if not isinstance(run, dict):
             continue
         if isinstance(run.get("stats"), dict):
-            put_xpts(run["stats"], run_xpts(run, False))
+            league[id(run)] = put_xpts(run["stats"], run_xpts(run, False))
         if isinstance(run.get("diamond"), dict):
-            put_xpts(run["diamond"], run_xpts(run, True))
+            diamond[id(run)] = put_xpts(run["diamond"], run_xpts(run, True))
     refs = averaged_runs(test)
-    put_xpts(test.get("results"), mean_xpts([r.get("stats") for r in refs]))
-    chosen = [as_dict(r) for r in as_list(test.get("runs")) if as_dict(r).get("kind") == "CHOSEN"]
-    put_xpts(test.get("chosen"), mean_xpts([r.get("stats") for r in chosen]))
-    put_xpts(test.get("diamond"), mean_xpts([r.get("diamond") for r in refs]))
+    put_xpts(test.get("results"), mean_xpts([league.get(id(r)) for r in refs]))
+    chosen = [r for r in as_list(test.get("runs")) if isinstance(r, dict) and r.get("kind") == "CHOSEN"]
+    put_xpts(test.get("chosen"), mean_xpts([league.get(id(r)) for r in chosen]))
+    put_xpts(test.get("diamond"), mean_xpts([diamond.get(id(r)) for r in refs]))
     # The exported byTier / byClub blocks of the test JSON: same run, by tier or by position.
     tiers = as_dict(test.get("byTier"))
     by_tier_runs = as_dict(by_tier_runs_of(test))
     for tier, entry in tiers.items():
         run = by_tier_runs.get(tier)
         if isinstance(entry, dict) and run:
-            put_xpts(entry.get("results"), mean_xpts([run.get("stats")]))
-            put_xpts(entry.get("diamond"), mean_xpts([run.get("diamond")]))
+            put_xpts(entry.get("results"), mean_xpts([league.get(id(run))]))
+            put_xpts(entry.get("diamond"), mean_xpts([diamond.get(id(run))]))
     for entry, run in zip(as_list(test.get("byClub")), refs):
         if isinstance(entry, dict):
-            put_xpts(entry.get("results"), mean_xpts([run.get("stats")]))
-            put_xpts(entry.get("diamond"), mean_xpts([run.get("diamond")]))
+            put_xpts(entry.get("results"), mean_xpts([league.get(id(run))]))
+            put_xpts(entry.get("diamond"), mean_xpts([diamond.get(id(run))]))
 
 
 def by_tier_runs_of(test):

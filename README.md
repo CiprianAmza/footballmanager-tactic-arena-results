@@ -41,7 +41,8 @@ survive a database reset. Nothing under `tests/` is edited by hand.
      every Overall / Home / Away split has `xpts` (expected points, one decimal): as exported,
      else summed over the same league (or Diamond League) matches as `pts` and averaged over the
      same runs, per match `xptsFor`, else 3·P(win) + P(draw) from independent Poisson on
-     `xgFor` / `xgAgainst` (no xG: the match is skipped; no usable match: `null`);
+     `xgFor` / `xgAgainst` (goals 0..10, 11+ folded into 10; no xG: the match is skipped; no
+     usable match: `null`; rounded once per split);
    - `data/<key>/result.json`: the full test as plain JSON, plus its screenshots
      (`<key>` = the test `uid`, or the folder name when there is none).
 
