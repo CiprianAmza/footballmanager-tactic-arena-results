@@ -624,7 +624,7 @@
     var hasDiamond = runs.some(function (r) { return diamondCell(r) !== null; });
     var hasPlayers = runs.some(function (r) { return playersCell(r) !== null; });
     var club = isClubTest(test);
-    var columns = [club ? 'Season' : 'Club', club ? 'Club' : 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
+    var columns = [club ? 'Season' : 'Club', club ? 'Club' : 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'xPts', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
       .concat(hasDiamond ? ['Diamond League'] : []).concat(hasPlayers ? ['Top scorer · rating'] : []).concat(['Cups']);
     var optional = { GF: 1, GA: 1, xGF: 1, xGA: 1, Role: 1 };
     var wrap = h('div', { class: 'ta-table-wrap runs-wrap' });
@@ -666,6 +666,7 @@
         h('td', { class: finishClass, title: finishTitle, text: done ? A.placeText(done.position, done.size) : '—' }),
         h('td', { text: split ? A.show(split.pld) : '—' }),
         h('td', { class: 'ta-strong', text: split ? A.pts(split) : '—' }),
+        h('td', { title: A.XPTS_TITLE, text: A.xpts(split) }),
         h('td', { class: split ? A.signClass(split.gd) : null, text: split ? A.signed(split.gd) : '—' }),
         h('td', { class: 'opt', text: split ? A.show(split.gf) : '—' }),
         h('td', { class: 'opt', text: split ? A.show(split.ga) : '—' }),

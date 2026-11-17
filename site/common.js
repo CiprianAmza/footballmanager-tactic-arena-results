@@ -102,7 +102,7 @@
       return section;
     }
     var head = h('tr', null, h('th', { class: 'ta-left' }),
-      ['PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD'].map(function (label) { return h('th', { text: label }); }));
+      ['PLD', 'PTS', 'xPts', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD'].map(function (label) { return h('th', { text: label }); }));
     var body = h('tbody');
     rows.forEach(function (pair) {
       var s = pair[1];
@@ -110,6 +110,7 @@
         h('td', { class: 'ta-left ta-strong', text: pair[0] }),
         h('td', { text: show(s.pld) }),
         h('td', { class: 'ta-strong', text: pts(s) }),
+        h('td', { title: XPTS_TITLE, text: xpts(s) }),
         h('td', { class: signClass(s.gd), text: signed(s.gd) }),
         h('td', { text: show(s.gf) }),
         h('td', { text: show(s.ga) }),
@@ -129,6 +130,11 @@
     if (!isNum(position) || position <= 0) return null;
     return position + ' / ' + (isNum(size) && size > 0 ? size : '—');
   }
+
+  var XPTS_TITLE = "Expected points: 3 × chance to win + 1 × chance to draw in every match, from the engine's pre-match chances.";
+
+  /** Expected points with one decimal, or "—". */
+  function xpts(split) { return split && isNum(split.xpts) ? split.xpts.toFixed(1) : '—'; }
 
   function pts(split) {
     if (!split || !isNum(split.pts)) return '—';
@@ -151,7 +157,7 @@
   function closeLightbox() { if (lightbox) { lightbox.hidden = true; lightbox.textContent = ''; } }
 
   window.Arena = {
-    h: h, show: show, signed: signed, signClass: signClass, isNum: isNum, pts: pts, placeText: placeText,
+    h: h, show: show, signed: signed, signClass: signClass, isNum: isNum, pts: pts, xpts: xpts, XPTS_TITLE: XPTS_TITLE, placeText: placeText,
     formationLabel: formationLabel, formatDate: formatDate, parseDate: parseDate,
     loadJson: loadJson, engineLabel: engineLabel, testUrl: testUrl,
     resultsBlock: resultsBlock, openLightbox: openLightbox

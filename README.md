@@ -38,6 +38,10 @@ survive a database reset. Nothing under `tests/` is edited by hand.
      test plays one club's first season `repeats` times: the row carries the club (`teamId`,
      `teamName`, `leagueName`, `predictedPosition`, `leagueSize`), `results` = the mean of the
      seasons and `byClub` = one entry per season run (`label` "Season run i", `finalPosition`));
+     every Overall / Home / Away split has `xpts` (expected points, one decimal): as exported,
+     else summed over the same league (or Diamond League) matches as `pts` and averaged over the
+     same runs, per match `xptsFor`, else 3·P(win) + P(draw) from independent Poisson on
+     `xgFor` / `xgAgainst` (no xG: the match is skipped; no usable match: `null`);
    - `data/<key>/result.json`: the full test as plain JSON, plus its screenshots
      (`<key>` = the test `uid`, or the folder name when there is none).
 

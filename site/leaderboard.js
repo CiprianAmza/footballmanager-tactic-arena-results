@@ -4,8 +4,11 @@
   var A = window.Arena;
   var h = A.h;
 
+  var XPTS_TITLE = "Expected points: 3 × chance to win + 1 × chance to draw in every match, from the engine's pre-match chances. " +
+    'Shows how good the tactic is without luck.';
   var NUMERIC = [
-    { key: 'pld', label: 'PLD' }, { key: 'pts', label: 'PTS' }, { key: 'gd', label: 'GD' },
+    { key: 'pld', label: 'PLD' }, { key: 'pts', label: 'PTS' }, { key: 'xpts', label: 'xPts', title: XPTS_TITLE },
+    { key: 'gd', label: 'GD' },
     { key: 'gf', label: 'GF' }, { key: 'ga', label: 'GA' }, { key: 'xgf', label: 'xGF' },
     { key: 'xga', label: 'xGA' }, { key: 'xgd', label: 'xGD' }
   ];
@@ -359,6 +362,10 @@
     return text ? h('span', { class: 'ta-small', title: 'Media prediction', text: ' (pred. ' + text + ')' }) : null;
   }
 
+  function xptsCell(split) {
+    return split && A.isNum(split.xpts) ? h('td', { text: A.xpts(split) }) : dash();
+  }
+
   function ptsCell(split) {
     var cell = h('td', { class: 'ta-strong', text: A.pts(split) });
     var share = pct(split);
@@ -552,6 +559,7 @@
         var p = pct(splitOf(t, team, state.split));
         return p === null ? dash() : h('td', { class: 'ta-strong', text: p.toFixed(1) });
       } });
+      cols.push({ key: 'xpts', label: 'xPts', title: XPTS_TITLE, cell: function (t) { return xptsCell(splitOf(t, team, state.split)); } });
       cols.push({ key: 'gd', label: 'GD', cell: function (t) {
         var s = splitOf(t, team, state.split);
         return s ? h('td', { class: A.signClass(s.gd), text: A.signed(s.gd) }) : dash();
@@ -572,10 +580,11 @@
     }
     if (opt.lpos) cols.push(lposCol);
     NUMERIC.forEach(function (n) {
-      cols.push({ key: n.key, label: n.label, cell: function (t) {
+      cols.push({ key: n.key, label: n.label, title: n.title, cell: function (t) {
         var s = splitOf(t, team, state.split);
         if (!s) return dash();
         if (n.key === 'pts') return ptsCell(s);
+        if (n.key === 'xpts') return xptsCell(s);
         if (n.key === 'gd' || n.key === 'xgd') return h('td', { class: A.signClass(s[n.key]), text: A.signed(s[n.key]) });
         return h('td', { text: A.show(s[n.key]) });
       } });
