@@ -12,7 +12,8 @@
   var SPLITS = ['overall', 'home', 'away'];
   var CATEGORIES = [
     { key: 'general', value: 'GENERAL', label: 'General' },
-    { key: 'diamond', value: 'DIAMOND', label: 'Diamond League clubs' }
+    { key: 'diamond', value: 'DIAMOND', label: 'Diamond League clubs' },
+    { key: 'club', value: 'CLUB', label: 'Club' }
   ];
   /** General tests: the average of the three reference clubs, then each club type. */
   var GENERAL_TEAMS = [
@@ -21,13 +22,59 @@
     { key: 'mid', tier: 'MID', label: 'Mid-table club', best: 'Best for a mid-table club' },
     { key: 'bottom', tier: 'BOTTOM', label: 'Bottom club', best: 'Best for a bottom club' }
   ];
+  /** The tactic settings of a test (`settings` in data/index.json) with their defaults. */
+  var SETTINGS = [
+    { key: 'tactic', label: 'Formation', def: '442' },
+    { key: 'mentality', label: 'Mentality', def: 'Balanced' },
+    { key: 'inPossession', label: 'Possession', def: 'Standard' },
+    { key: 'passingType', label: 'Passing', def: 'Normal' },
+    { key: 'tempo', label: 'Tempo', def: 'Standard' },
+    { key: 'timeWasting', label: 'Time wasting', def: 'Sometimes' },
+    { key: 'defensiveLine', label: 'Def line', def: 'Standard' },
+    { key: 'pressing', label: 'Pressing', def: 'Normal' },
+    { key: 'width', label: 'Width', def: 'Balanced' },
+    { key: 'dribbling', label: 'Dribbling', def: 'Standard' },
+    { key: 'foulFrequency', label: 'Foul freq', def: 'Normal' },
+    { key: 'foulHardness', label: 'Foul hardness', def: 'Medium' },
+    { key: 'tempoFragmentation', label: 'Fragmentation', def: 'Normal' },
+    { key: 'widePlay', label: 'Wide play', def: 'Shoot' },
+    { key: 'transition', label: 'Transition', def: 'Balanced' },
+    { key: 'recovery', label: 'Recovery', def: 'Standard' }
+  ];
+  var ENGINES = { classic: 'Classic', '2d': '2D' };
+  var ENGINE_TITLE = "2D engine for the tested club's matches, classic engine for the rest";
+
   var state = {
-    board: null, cat: 'general', split: 'overall', team: 'all', formationsOnly: false,
-    sortKey: 'pts', sortDesc: true, engine: ''
+    board: null, cat: 'general', split: 'overall', team: 'all', club: '', formationsOnly: false,
+    sortKey: 'pts', sortDesc: true, engine: '', cols: 'results', filters: {}
   };
 
-  function categoryOf(test) { return String(test.category || 'GENERAL').toUpperCase() === 'DIAMOND' ? 'diamond' : 'general'; }
+  function categoryOf(test) {
+    var value = String(test.category || 'GENERAL').toUpperCase();
+    return value === 'DIAMOND' ? 'diamond' : (value === 'CLUB' ? 'club' : 'general');
+  }
   function catTests() { return state.board.tests.filter(function (test) { return categoryOf(test) === state.cat; }); }
+
+  /** "classic" / "2d" / "" from the test's engine. */
+  function engineOf(test) {
+    var value = String(test && test.engine || '').toLowerCase();
+    if (value === 'classic') return 'classic';
+    if (value.indexOf('2d') === 0) return '2d';
+    return '';
+  }
+
+  function settingsOf(test) {
+    var given = test.settings && typeof test.settings === 'object' ? test.settings : {};
+    var out = {};
+    SETTINGS.forEach(function (s) {
+      var v = given[s.key];
+      if (v === null || v === undefined || v === '') v = s.key === 'tactic' && test.formation ? test.formation : s.def;
+      out[s.key] = String(v);
+    });
+    return out;
+  }
+
+  function settingText(s, value) { return s.key === 'tactic' ? A.formationLabel(value) : value; }
 
   function uploaded(test) {
     var d = A.parseDate(test.finishedAt) || A.parseDate(test.createdAt);
@@ -41,8 +88,54 @@
     return pred ? ' (pred. ' + pred + ')' : '';
   }
 
+  /* ---------- club category ---------- */
+
+  /** The clubs that have CLUB tests: most tests first; label "Name · 3 / 20". */
+  function clubs() {
+    var byId = {};
+    var order = [];
+    newestFirst(state.board.tests.filter(function (t) { return categoryOf(t) === 'club'; })).forEach(function (test) {
+      var id = test.teamId === null || test.teamId === undefined ? 'n:' + (test.teamName || '') : String(test.teamId);
+      if (!byId[id]) {
+        var pred = A.placeText(test.predictedPosition, test.leagueSize);
+        byId[id] = { id: id, name: A.show(test.teamName), count: 0,
+          label: A.show(test.teamName) + (pred ? ' · ' + pred : ''), league: test.leagueName };
+        order.push(byId[id]);
+      }
+      byId[id].count++;
+    });
+    return order.sort(function (a, b) { return b.count - a.count; });
+  }
+
+  function clubIdOf(test) {
+    return test.teamId === null || test.teamId === undefined ? 'n:' + (test.teamName || '') : String(test.teamId);
+  }
+
+  function currentClub() {
+    var all = clubs();
+    return all.filter(function (c) { return c.id === state.club; })[0] || all[0] || null;
+  }
+
+  /** Tests of the category (and, for Club, of the chosen club). */
+  function scopeTests() {
+    var tests = catTests();
+    if (state.cat !== 'club') return tests;
+    var club = currentClub();
+    return club ? tests.filter(function (t) { return clubIdOf(t) === club.id; }) : [];
+  }
+
+  /** The tests whose values feed the setting filters: the scope after the engine choice. */
+  function baseTests() {
+    return scopeTests().filter(function (test) { return !state.engine || engineOf(test) === state.engine; });
+  }
+
   /** The "Team" choices of the current category. */
   function teams() {
+    if (state.cat === 'club') {
+      var club = currentClub();
+      return [{ key: 'all', label: club ? club.label : 'Club', clubName: club ? club.name : null,
+        best: club ? 'Best for ' + club.name : 'Best overall' }];
+    }
     if (state.cat === 'general') {
       return GENERAL_TEAMS.map(function (team) {
         if (!team.tier) return team;
@@ -115,8 +208,29 @@
 
   var TIER_ORDER = ['TOP', 'MID', 'BOTTOM'];
 
+  /** Mean of the season places of a CLUB test: {text "4.3", sort, title "3 · 5 · 5"}. */
+  function meanPlace(places, what) {
+    var known = places.filter(function (p) { return A.isNum(p); });
+    if (!known.length) return null;
+    var mean = known.reduce(function (a, b) { return a + b; }, 0) / known.length;
+    return { text: mean.toFixed(1), sort: mean,
+      title: what + ' of the ' + places.length + ' seasons: ' + places.map(function (p) { return A.isNum(p) ? p : '—'; }).join(' · ') };
+  }
+
+  function seasons(test) { return (test.byClub || []).filter(function (c) { return c && typeof c === 'object'; }); }
+
   /** League place for the table: {text, sort, cls}; for "All reference clubs" the three places "1 · 11 · 17". */
   function leaguePos(test, team) {
+    if (state.cat === 'club') {
+      var mp = meanPlace(seasons(test).map(function (c) { return c.finalPosition; }), 'League places');
+      if (!mp) return null;
+      if (A.isNum(test.predictedPosition)) {
+        if (mp.sort < test.predictedPosition) mp.cls = 'ta-pos';
+        else if (mp.sort > test.predictedPosition) mp.cls = 'ta-neg';
+        mp.title += ' (predicted ' + test.predictedPosition + ')';
+      }
+      return mp;
+    }
     if (team.key === 'all') {
       if (state.cat !== 'general') return null;
       var places = TIER_ORDER.map(function (t) { var e = test.byTier && test.byTier[t]; return e && A.isNum(e.finalPosition) ? e.finalPosition : null; });
@@ -138,6 +252,11 @@
 
   /** Diamond League place: the chosen club's, or the top club's for the general average. */
   function diamondPos(test, team) {
+    if (state.cat === 'club') {
+      var list = seasons(test);
+      if (!list.some(function (c) { return c.diamond && A.isNum(c.diamond.position); })) return null;
+      return meanPlace(list.map(function (c) { return c.diamond ? c.diamond.position : null; }), 'Diamond League places');
+    }
     var e;
     if (team.key === 'all') {
       if (state.cat !== 'general') return null;
@@ -150,8 +269,12 @@
     return { text: A.placeText(d.position, d.of), sort: d.position };
   }
 
+  function seasonsCount(test) {
+    return A.isNum(test.repeats) ? test.repeats : (seasons(test).length || null);
+  }
+
   function hasDiamond() {
-    return catTests().some(function (test) {
+    return scopeTests().some(function (test) {
       if (test.diamond) return true;
       return (test.byClub || []).some(function (c) { return c && c.diamond; });
     });
@@ -180,17 +303,27 @@
     if (state.sortKey === 'dl') return pct(diamondOf(test, team, state.split));
     if (state.sortKey === 'lpos') { var lp = leaguePos(test, team); return lp ? lp.sort : null; }
     if (state.sortKey === 'dlpos') { var dp = diamondPos(test, team); return dp ? dp.sort : null; }
+    if (state.sortKey === 'seasons') return seasonsCount(test);
     var split = splitOf(test, team, state.split);
     if (!split) return null;
     if (state.sortKey === 'pts') return points(split, team);
+    if (state.sortKey === 'ptspct') return pct(split);
     var v = split[state.sortKey];
     return A.isNum(v) ? v : null;
   }
 
+  function activeFilters() {
+    return SETTINGS.filter(function (s) { return state.filters[s.key] !== undefined && state.filters[s.key] !== ''; });
+  }
+
   function visibleTests() {
-    return catTests().filter(function (test) {
-      if (state.engine && A.engineLabel(test) !== state.engine) return false;
+    var filters = activeFilters();
+    return baseTests().filter(function (test) {
       if (state.formationsOnly && test.formationOnly !== true) return false;
+      if (filters.length) {
+        var set = settingsOf(test);
+        for (var i = 0; i < filters.length; i++) if (set[filters[i].key] !== state.filters[filters[i].key]) return false;
+      }
       return true;
     });
   }
@@ -215,6 +348,7 @@
 
   /** Club / League columns only when some test has a chosen club (general-only tests have none). */
   function hasClubs() {
+    if (state.cat === 'club') return false; // the club is the selector itself
     return catTests().some(function (test) { return test.teamName || test.leagueName; });
   }
 
@@ -236,11 +370,20 @@
 
   function readAddress() {
     var params = new URLSearchParams(window.location.search);
-    if (params.get('cat') === 'diamond') state.cat = 'diamond';
+    var cat = params.get('cat');
+    if (cat === 'diamond' || cat === 'club') state.cat = cat;
     var view = params.get('view');
     if (view && SPLITS.indexOf(view) >= 0) state.split = view;
     state.team = params.get('team') || 'all';
+    state.club = params.get('club') || '';
     state.formationsOnly = params.get('formations') === '1';
+    if (params.get('cols') === 'settings') state.cols = 'settings';
+    var engine = params.get('engine');
+    if (engine && ENGINES[engine]) state.engine = engine;
+    SETTINGS.forEach(function (s) {
+      var v = params.get('f_' + s.key);
+      if (v) state.filters[s.key] = v;
+    });
   }
 
   function writeAddress() {
@@ -248,8 +391,12 @@
     function put(name, value, fallback) { if (value !== fallback) params.set(name, value); else params.delete(name); }
     put('cat', state.cat, 'general');
     put('team', state.team, 'all');
+    put('club', state.cat === 'club' ? state.club : '', '');
     put('view', state.split, 'overall');
     put('formations', state.formationsOnly ? '1' : '0', '0');
+    put('cols', state.cols, 'results');
+    put('engine', state.engine, '');
+    SETTINGS.forEach(function (s) { put('f_' + s.key, state.filters[s.key] || '', ''); });
     var query = params.toString();
     try { history.replaceState(null, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash); } catch (e) { /* ignore */ }
   }
@@ -267,7 +414,11 @@
       : done.length + ' tactics have been tested. Total number of matches played is ' + matches + '.';
     var note = document.getElementById('pts-note');
     var names = teams().filter(function (t) { return t.clubName; }).map(function (t) { return t.clubName; });
-    if (state.cat === 'diamond') {
+    if (state.cat === 'club') {
+      var club = currentClub();
+      note.textContent = 'PTS = average league points per season / maximum possible, over the repeated first seasons of ' +
+        (club ? club.name : 'the club') + ' (column Seasons); League pos / DL pos = the average place, the single places in the tooltip.';
+    } else if (state.cat === 'diamond') {
       note.textContent = 'PTS = average league points per season / maximum possible over the Diamond League clubs' +
         (names.length ? ' (' + names.join(', ') + ')' : '') + '; the % is the share of the maximum, used to rank "All 8 clubs".';
     } else {
@@ -296,7 +447,7 @@
     box.classList.toggle('compact', state.cat === 'diamond');
     teams().forEach(function (team) {
       var found = best(team);
-      var card = h('div', { class: 'best-card' + (state.team === team.key ? ' active' : ''),
+      var card = h('div', { class: 'best-card' + (state.team === team.key && state.cat !== 'club' ? ' active' : ''),
         title: 'Show the table for: ' + team.label, onclick: function () { state.team = team.key; render(); } },
         h('span', { class: 'best-title', text: state.cat === 'diamond' && team.teamId !== undefined ? 'Best for ' + team.best : team.best }),
         state.cat === 'general' && team.clubName ? h('span', { class: 'ta-small', text: team.clubName }) : null);
@@ -328,7 +479,7 @@
       if (!winner || p > winnerPct || (p === winnerPct && gd > winnerGd)) { winner = { test: test, split: s }; winnerPct = p; winnerGd = gd; }
     });
     var card = h('div', { class: 'best-card diamond-card', title: 'Sort the table by Diamond League points',
-      onclick: function () { state.sortKey = 'dl'; state.sortDesc = true; render(); } },
+      onclick: function () { state.sortKey = 'dl'; state.sortDesc = true; state.cols = 'results'; render(); } },
       h('span', { class: 'best-title', text: 'Best in the Diamond League' }));
     if (winner) {
       card.appendChild(h('a', { class: 'best-name', href: A.testUrl(winner.test.key), text: A.show(winner.test.name),
@@ -345,7 +496,7 @@
 
   /** Which optional columns the current category and team choice have data for. */
   function optionalColumns(team) {
-    var tests = catTests();
+    var tests = scopeTests();
     return {
       lpos: tests.some(function (t) { return leaguePos(t, team) !== null; }),
       dl: hasDiamond(),
@@ -353,76 +504,172 @@
     };
   }
 
-  function renderHead(clubs, team) {
-    var head = document.getElementById('head-row');
-    head.textContent = '';
-    (clubs ? ['Thread', 'Formation', 'Owner', 'Club', 'League'] : ['Thread', 'Formation', 'Owner']).forEach(function (label) {
-      head.appendChild(h('th', { class: 'ta-left', text: label }));
-    });
+  function dash() { return h('td', { class: 'ta-muted', text: '—' }); }
+
+  function nameCell(test, url) {
+    var thread = h('td', { class: 'ta-left ta-thread' },
+      h('a', { href: url, text: A.show(test.name), onclick: function (event) { event.stopPropagation(); } }));
+    if (test.status && test.status !== 'DONE') thread.appendChild(h('span', { class: 'ta-status ' + test.status, text: test.status }));
+    return thread;
+  }
+
+  function engineCell(test) {
+    var kind = engineOf(test);
+    return h('td', { class: 'ta-left' + (kind ? ' eng eng-' + kind : ' ta-muted'), title: ENGINE_TITLE,
+      text: ENGINES[kind] || A.show(test.engine) });
+  }
+
+  function lposCell(test, team) {
+    var lp = leaguePos(test, team);
+    return h('td', { class: lp ? lp.cls : 'ta-muted', title: lp ? lp.title : null, text: lp ? lp.text : '—' });
+  }
+
+  function dlposCell(test, team) {
+    var dp = diamondPos(test, team);
+    return h('td', { class: dp ? null : 'ta-muted', title: dp ? dp.title : null, text: dp ? dp.text : '—' });
+  }
+
+  /** The columns of the current view: {key (sort key or null), label, left, title, filter (setting), cell(test, rank)}. */
+  function columns(team) {
     var opt = optionalColumns(team);
-    (opt.lpos ? [{ key: 'lpos', label: 'League pos' }] : []).concat(NUMERIC)
-      .concat(opt.dl ? [{ key: 'dl', label: 'Diamond League' }] : [])
-      .concat(opt.dlpos ? [{ key: 'dlpos', label: 'DL pos' }] : [])
-      .concat([{ key: 'uploaded', label: 'Uploaded' }]).forEach(function (column) {
-      head.appendChild(h('th', {
-        class: 'sortable' + (state.sortKey === column.key ? ' sorted' : ''),
-        text: column.label + arrow(column.key),
-        onclick: function () { sortBy(column.key); }
-      }));
+    var club = state.cat === 'club';
+    var cols = [];
+    var nameCol = { label: 'Thread', left: true, cell: function (t, r, url) { return nameCell(t, url); } };
+    var engineCol = { label: 'Engine', left: true, title: ENGINE_TITLE, cell: engineCell };
+    var lposCol = { key: 'lpos', label: 'League pos', cell: function (t) { return lposCell(t, team); } };
+    if (state.cols === 'settings') {
+      cols.push({ label: '#', cell: function (t, rank) { return h('td', { class: 'ta-muted', text: String(rank) }); } });
+      cols.push(nameCol, engineCol);
+      SETTINGS.forEach(function (s) {
+        cols.push({ label: s.label, left: true, filter: s, cell: function (t) {
+          var v = settingsOf(t)[s.key];
+          var isDefault = v === s.def;
+          return h('td', { class: 'ta-left ' + (isDefault ? 'set-def' : 'set-on'), title: isDefault ? 'Default' : 'Default: ' + settingText(s, s.def),
+            text: settingText(s, v) });
+        } });
+      });
+      cols.push({ key: 'ptspct', label: 'Pts %', title: 'Share of the maximum league points', cell: function (t) {
+        var p = pct(splitOf(t, team, state.split));
+        return p === null ? dash() : h('td', { class: 'ta-strong', text: p.toFixed(1) });
+      } });
+      cols.push({ key: 'gd', label: 'GD', cell: function (t) {
+        var s = splitOf(t, team, state.split);
+        return s ? h('td', { class: A.signClass(s.gd), text: A.signed(s.gd) }) : dash();
+      } });
+      if (club && opt.lpos) cols.push(lposCol);
+      return cols;
+    }
+    var clubsCols = hasClubs();
+    cols.push(nameCol, engineCol);
+    cols.push({ label: 'Formation', left: true, cell: function (t) { return h('td', { class: 'ta-left', text: A.formationLabel(t.formation) }); } });
+    cols.push({ label: 'Owner', left: true, cell: function (t) { return h('td', { class: 'ta-left', text: A.show(t.owner) }); } });
+    if (clubsCols) {
+      cols.push({ label: 'Club', left: true, cell: function (t) { return h('td', { class: 'ta-left' }, A.show(t.teamName), prediction(t)); } });
+      cols.push({ label: 'League', left: true, cell: function (t) { return h('td', { class: 'ta-left', text: A.show(t.leagueName) }); } });
+    }
+    if (club) {
+      cols.push({ key: 'seasons', label: 'Seasons', title: 'Season runs averaged', cell: function (t) { return h('td', { text: A.show(seasonsCount(t)) }); } });
+    }
+    if (opt.lpos) cols.push(lposCol);
+    NUMERIC.forEach(function (n) {
+      cols.push({ key: n.key, label: n.label, cell: function (t) {
+        var s = splitOf(t, team, state.split);
+        if (!s) return dash();
+        if (n.key === 'pts') return ptsCell(s);
+        if (n.key === 'gd' || n.key === 'xgd') return h('td', { class: A.signClass(s[n.key]), text: A.signed(s[n.key]) });
+        return h('td', { text: A.show(s[n.key]) });
+      } });
+    });
+    if (opt.dl) {
+      cols.push({ key: 'dl', label: 'Diamond League', cell: function (t) {
+        var dl = diamondOf(t, team, state.split);
+        var cell = h('td', { class: dl ? 'ta-strong' : 'ta-muted', text: dl ? A.pts(dl) : '—' });
+        if (dl && pct(dl) !== null) cell.appendChild(h('span', { class: 'ta-small pct', text: ' ' + pct(dl) + '%' }));
+        return cell;
+      } });
+    }
+    if (opt.dlpos) cols.push({ key: 'dlpos', label: 'DL pos', cell: function (t) { return dlposCell(t, team); } });
+    cols.push({ key: 'uploaded', label: 'Uploaded', cell: function (t) { return h('td', { text: A.formatDate(t.finishedAt || t.createdAt) }); } });
+    return cols;
+  }
+
+  /** The values a setting takes in the rows of the current category (after the engine / club choice). */
+  function filterValues(s) {
+    var seen = {};
+    baseTests().forEach(function (t) { seen[settingsOf(t)[s.key]] = true; });
+    var current = state.filters[s.key];
+    if (current) seen[current] = true;
+    return Object.keys(seen).sort(function (a, b) {
+      if (a === s.def) return -1;
+      if (b === s.def) return 1;
+      return a.localeCompare(b);
     });
   }
 
-  function renderRows(team, clubs) {
+  function renderHead(cols) {
+    var head = document.getElementById('head');
+    head.textContent = '';
+    var row = h('tr');
+    cols.forEach(function (column) {
+      row.appendChild(h('th', {
+        class: (column.left ? 'ta-left' : '') + (column.key ? ' sortable' + (state.sortKey === column.key ? ' sorted' : '') : ''),
+        title: column.title || null,
+        text: column.label + (column.key ? arrow(column.key) : ''),
+        onclick: column.key ? function () { sortBy(column.key); } : null
+      }));
+    });
+    head.appendChild(row);
+    if (state.cols !== 'settings') return;
+    var filters = h('tr', { class: 'filter-row' });
+    cols.forEach(function (column) {
+      var s = column.filter;
+      if (!s) { filters.appendChild(h('th')); return; }
+      var select = h('select', { class: 'ta-select ta-select-sm' + (state.filters[s.key] ? ' on' : ''), 'aria-label': 'Filter: ' + s.label,
+        onchange: function (event) { setFilter(s.key, event.target.value); } },
+        h('option', { value: '', text: 'Any' }));
+      filterValues(s).forEach(function (v) {
+        select.appendChild(h('option', { value: v, text: settingText(s, v) + (v === s.def ? ' (default)' : ''),
+          selected: state.filters[s.key] === v }));
+      });
+      filters.appendChild(h('th', { class: 'ta-left' }, select));
+    });
+    head.appendChild(filters);
+  }
+
+  function setFilter(key, value) {
+    if (value) state.filters[key] = value; else delete state.filters[key];
+    render();
+  }
+
+  function renderChips() {
+    var box = document.getElementById('filter-chips');
+    box.textContent = '';
+    var active = activeFilters();
+    box.hidden = !active.length;
+    if (!active.length) return;
+    box.appendChild(h('span', { class: 'ta-filter', text: 'Filters' }));
+    active.forEach(function (s) {
+      box.appendChild(h('button', { type: 'button', class: 'filter-chip', title: 'Remove this filter',
+        onclick: function () { setFilter(s.key, ''); } },
+        s.label + ': ' + settingText(s, state.filters[s.key]) + ' ', h('span', { 'aria-hidden': 'true', text: '×' })));
+    });
+    box.appendChild(h('button', { type: 'button', class: 'ta-link-btn', text: 'Clear all',
+      onclick: function () { state.filters = {}; render(); } }));
+  }
+
+  function renderRows(team, cols) {
     var body = document.getElementById('rows');
     body.textContent = '';
     var tests = sortedTests(team);
-    var opt = optionalColumns(team);
-    var diamond = opt.dl;
-    var columns = NUMERIC.length + (clubs ? 6 : 4) + (opt.dl ? 1 : 0) + (opt.lpos ? 1 : 0) + (opt.dlpos ? 1 : 0);
     if (!tests.length) {
-      body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: columns,
+      body.appendChild(h('tr', null, h('td', { class: 'ta-left ta-muted', colspan: cols.length,
         text: catTests().length ? 'No test matches this filter.' : 'No tests yet.' })));
       return;
     }
-    tests.forEach(function (test) {
+    tests.forEach(function (test, i) {
       var url = A.testUrl(test.key);
-      var thread = h('td', { class: 'ta-left ta-thread' },
-        h('a', { href: url, text: A.show(test.name), onclick: function (event) { event.stopPropagation(); } }));
-      if (test.status && test.status !== 'DONE') thread.appendChild(h('span', { class: 'ta-status ' + test.status, text: test.status }));
-      var tr = h('tr', { class: 'ta-link-row', onclick: function () { window.location.href = url; } },
-        thread,
-        h('td', { class: 'ta-left', text: A.formationLabel(test.formation) }),
-        h('td', { class: 'ta-left', text: A.show(test.owner) }),
-        clubs ? h('td', { class: 'ta-left' }, A.show(test.teamName), prediction(test)) : null,
-        clubs ? h('td', { class: 'ta-left', text: A.show(test.leagueName) }) : null);
-      if (opt.lpos) {
-        var lp = leaguePos(test, team);
-        tr.appendChild(h('td', { class: lp ? lp.cls : 'ta-muted', title: lp ? lp.title : null, text: lp ? lp.text : '—' }));
-      }
-      var s = splitOf(test, team, state.split);
-      if (s) {
-        tr.appendChild(h('td', { text: A.show(s.pld) }));
-        tr.appendChild(ptsCell(s));
-        tr.appendChild(h('td', { class: A.signClass(s.gd), text: A.signed(s.gd) }));
-        tr.appendChild(h('td', { text: A.show(s.gf) }));
-        tr.appendChild(h('td', { text: A.show(s.ga) }));
-        tr.appendChild(h('td', { text: A.show(s.xgf) }));
-        tr.appendChild(h('td', { text: A.show(s.xga) }));
-        tr.appendChild(h('td', { class: A.signClass(s.xgd), text: A.signed(s.xgd) }));
-      } else {
-        NUMERIC.forEach(function () { tr.appendChild(h('td', { class: 'ta-muted', text: '—' })); });
-      }
-      if (diamond) {
-        var dl = diamondOf(test, team, state.split);
-        var cell = h('td', { class: dl ? 'ta-strong' : 'ta-muted', text: dl ? A.pts(dl) : '—' });
-        if (dl && pct(dl) !== null) cell.appendChild(h('span', { class: 'ta-small pct', text: ' ' + pct(dl) + '%' }));
-        tr.appendChild(cell);
-      }
-      if (opt.dlpos) {
-        var dp = diamondPos(test, team);
-        tr.appendChild(h('td', { class: dp ? null : 'ta-muted', text: dp ? dp.text : '—' }));
-      }
-      tr.appendChild(h('td', { text: A.formatDate(test.finishedAt || test.createdAt) }));
+      var tr = h('tr', { class: 'ta-link-row', onclick: function () { window.location.href = url; } });
+      cols.forEach(function (column) { tr.appendChild(column.cell(test, i + 1, url)); });
       body.appendChild(tr);
     });
   }
@@ -439,6 +686,18 @@
   function renderTeams(team) {
     var box = document.getElementById('teams');
     box.textContent = '';
+    if (state.cat === 'club') {
+      document.getElementById('team-label').textContent = 'Club';
+      clubs().forEach(function (club) {
+        box.appendChild(h('button', { type: 'button', role: 'tab', 'data-club': club.id, text: club.label,
+          title: (club.league ? club.league + ' · ' : '') + 'media prediction · ' + club.count + ' test(s)',
+          onclick: function () { state.club = club.id; render(); } }));
+      });
+      markActive('#teams button', 'data-club', state.club);
+      document.getElementById('team-note').textContent = 'Every row: the first season of this club repeated N times (column Seasons), figures averaged.';
+      return;
+    }
+    document.getElementById('team-label').textContent = 'Team';
     teams().forEach(function (option) {
       box.appendChild(h('button', { type: 'button', role: 'tab', 'data-team': option.key, text: option.label,
         onclick: function () { state.team = option.key; render(); } }));
@@ -449,20 +708,24 @@
   }
 
   function renderCats() {
-    var hasDiamond = state.board.tests.some(function (test) { return categoryOf(test) === 'diamond'; });
+    var present = {};
+    state.board.tests.forEach(function (test) { present[categoryOf(test)] = true; });
+    var shown = CATEGORIES.filter(function (cat) { return cat.key === 'general' || present[cat.key]; });
+    if (!present[state.cat]) state.cat = 'general';
     var box = document.getElementById('cats');
-    box.hidden = !hasDiamond;
-    if (!hasDiamond) { state.cat = 'general'; return; }
+    box.hidden = shown.length < 2;
     box.textContent = '';
-    CATEGORIES.forEach(function (cat) {
+    shown.forEach(function (cat) {
       box.appendChild(h('button', { type: 'button', role: 'tab', 'data-cat': cat.key, text: cat.label,
-        onclick: function () { if (state.cat !== cat.key) { state.cat = cat.key; state.team = 'all'; render(); } } }));
+        onclick: function () {
+          if (state.cat !== cat.key) { state.cat = cat.key; state.team = 'all'; state.filters = {}; render(); }
+        } }));
     });
     markActive('#cats button', 'data-cat', state.cat);
   }
 
   function renderFormationsToggle() {
-    var tests = catTests();
+    var tests = scopeTests();
     var some = tests.some(function (test) { return test.formationOnly === true; });
     var all = tests.every(function (test) { return test.formationOnly === true; });
     var useful = some && !all;
@@ -473,44 +736,47 @@
 
   function render() {
     renderCats();
+    if (state.cat === 'club') {
+      var club = currentClub();
+      state.club = club ? club.id : '';
+    }
     var team = currentTeam();
     state.team = team.key;
     renderFormationsToggle();
     renderSummary();
     renderCards();
     renderTeams(team);
-    var clubs = hasClubs();
-    var opt = optionalColumns(team);
-    if ((state.sortKey === 'lpos' && !opt.lpos) || (state.sortKey === 'dlpos' && !opt.dlpos) || (state.sortKey === 'dl' && !opt.dl)) {
-      state.sortKey = 'pts';
-      state.sortDesc = true;
+    document.getElementById('engine-filter').value = state.engine;
+    var cols = columns(team);
+    var keys = cols.map(function (c) { return c.key; }).filter(Boolean);
+    if (keys.indexOf(state.sortKey) < 0) {
+      // The sorted column is not in this view: PTS and Pts % stand for each other, anything else goes back to points.
+      var alias = state.sortKey === 'pts' || state.sortKey === 'ptspct';
+      if (!alias) state.sortDesc = true;
+      state.sortKey = keys.indexOf('pts') >= 0 ? 'pts' : 'ptspct';
     }
-    renderHead(clubs, team);
-    renderRows(team, clubs);
+    renderChips();
+    renderHead(cols);
+    renderRows(team, cols);
     markActive('#tabs button', 'data-split', state.split);
+    markActive('#cols button', 'data-cols', state.cols);
     writeAddress();
-  }
-
-  function setupFilter() {
-    var labels = {};
-    state.board.tests.forEach(function (test) {
-      var label = A.engineLabel(test);
-      if (label) labels[label] = true;
-    });
-    var names = Object.keys(labels).sort();
-    if (!names.length) return;
-    var select = document.getElementById('engine-filter');
-    names.forEach(function (name) { select.appendChild(h('option', { value: name, text: name })); });
-    select.addEventListener('change', function () { state.engine = select.value; render(); });
-    document.getElementById('filter-wrap').hidden = false;
   }
 
   document.getElementById('tabs').addEventListener('click', function (event) {
     var split = event.target && event.target.getAttribute && event.target.getAttribute('data-split');
     if (split && state.board) { state.split = split; render(); }
   });
+  document.getElementById('cols').addEventListener('click', function (event) {
+    var cols = event.target && event.target.getAttribute && event.target.getAttribute('data-cols');
+    if (cols && state.board && cols !== state.cols) { state.cols = cols; render(); }
+  });
   document.getElementById('formations-only').addEventListener('change', function (event) {
     state.formationsOnly = event.target.checked;
+    if (state.board) render();
+  });
+  document.getElementById('engine-filter').addEventListener('change', function (event) {
+    state.engine = ENGINES[event.target.value] ? event.target.value : '';
     if (state.board) render();
   });
 
@@ -523,7 +789,6 @@
     if (state.board.generatedAt) {
       document.getElementById('generated').textContent = 'Updated ' + A.formatDate(state.board.generatedAt, true) + '.';
     }
-    setupFilter();
     render();
   }).catch(function (error) {
     if (/HTTP 404/.test(error.message)) {

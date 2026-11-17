@@ -24,10 +24,17 @@
     <div class="best-cards" id="best-cards"></div>
 
     <div class="ta-team-row">
-      <span class="ta-filter">Team</span>
+      <span class="ta-filter" id="team-label">Team</span>
       <div class="ta-chips" role="tablist" id="teams"></div>
+      <label class="ta-filter ta-engine" title="2D engine for the tested club's matches, classic engine for the rest">Engine
+        <select class="ta-select" id="engine-filter">
+          <option value="">All</option><option value="classic">Classic</option><option value="2d">2D</option>
+        </select>
+      </label>
     </div>
     <p class="ta-small" id="team-note"></p>
+
+    <div class="ta-filter-chips" id="filter-chips" hidden></div>
 
     <div class="ta-toolbar">
       <div class="ta-tabs" role="tablist" id="tabs">
@@ -39,14 +46,15 @@
         <label class="ta-filter" id="formations-wrap" hidden>
           <input type="checkbox" id="formations-only"> Formations only
         </label>
-        <label class="ta-filter" id="filter-wrap" hidden>Engine
-          <select class="ta-select" id="engine-filter"><option value="">All</option></select>
-        </label>
+        <div class="ta-seg" role="tablist" id="cols" aria-label="Columns">
+          <button type="button" role="tab" data-cols="results" class="active" aria-selected="true">Results</button>
+          <button type="button" role="tab" data-cols="settings" aria-selected="false">Tactic settings</button>
+        </div>
       </div>
     </div>
     <div class="ta-table-wrap">
       <table class="ta-table">
-        <thead><tr id="head-row"></tr></thead>
+        <thead id="head"></thead>
         <tbody id="rows"><tr><td class="ta-left ta-muted" colspan="14">Loading…</td></tr></tbody>
       </table>
     </div>

@@ -241,7 +241,7 @@ def average_splits(splits):
 
 
 def test_diamond(test):
-    """The test's Diamond League block: as exported, else the average of the reference runs that play in it."""
+    """The test's Diamond League block: as exported, else the average of the reference (or season) runs in it."""
     given = test.get("diamond")
     if isinstance(given, dict):
         out = dict(given)
@@ -249,7 +249,8 @@ def test_diamond(test):
             out[name] = with_pts_pct(given.get(name))
         return out
     refs = [as_dict(run) for run in as_list(test.get("runs"))
-            if str(as_dict(run).get("kind") or "").startswith("REFERENCE") and isinstance(as_dict(run).get("diamond"), dict)]
+            if str(as_dict(run).get("kind") or "").upper().startswith(("REFERENCE", "REPEAT"))
+            and isinstance(as_dict(run).get("diamond"), dict)]
     if not refs:
         return None
     return dict({"basedOn": len(refs)}, **{name: average_splits([r["diamond"].get(name) for r in refs]) for name in SPLITS})
@@ -325,6 +326,11 @@ DEFAULT_INSTRUCTIONS = {
     "dribbling": "Standard", "foulFrequency": "Normal", "foulHardness": "Medium",
     "tempoFragmentation": "Normal", "widePlay": "Shoot", "transition": "Balanced", "recovery": "Standard",
 }
+# The flat `settings` object of a test: the formation key, then the 15 instructions.
+DEFAULT_SETTINGS = dict({"tactic": "442"}, **DEFAULT_INSTRUCTIONS)
+SETTING_KEYS = ("tactic", "mentality", "inPossession", "passingType", "tempo", "timeWasting", "defensiveLine",
+                "pressing", "width", "dribbling", "foulFrequency", "foulHardness", "tempoFragmentation",
+                "widePlay", "transition", "recovery")
 
 
 def by_tier(test):
@@ -365,13 +371,45 @@ def with_pts_pct(split):
 
 def category_of(test):
     value = str(test.get("category") or "GENERAL").upper()
-    return value if value in ("GENERAL", "DIAMOND") else "GENERAL"
+    return value if value in ("GENERAL", "DIAMOND", "CLUB") else "GENERAL"
+
+
+def settings_of(test):
+    """The 16 tactic settings: the test's `settings`, else read from its `tactic`; missing ones = default."""
+    given = as_dict(test.get("settings"))
+    tactic = as_dict(test.get("tactic"))
+    out = {}
+    for field in SETTING_KEYS:
+        value = given.get(field)
+        if value is None or value == "":
+            value = tactic.get(field)
+        if field == "tactic" and (value is None or value == ""):
+            value = test.get("formation")
+        if value is None or value == "":
+            value = DEFAULT_SETTINGS[field]
+        out[field] = str(value)
+    return out
+
+
+def repeats_of(test):
+    """N seasons of a CLUB test (`repeats`, else its REPEAT runs); None for the other categories."""
+    if category_of(test) != "CLUB":
+        return None
+    given = positive_int(test.get("repeats"))
+    if given:
+        return given
+    count = sum(1 for run in as_list(test.get("runs")) if str(as_dict(run).get("kind") or "").upper() == "REPEAT")
+    return count or None
 
 
 def by_club(test):
-    """Every reference run of the test with its figures, in run order."""
-    refs = [as_dict(run) for run in as_list(test.get("runs"))
-            if str(as_dict(run).get("kind") or "").startswith("REFERENCE")]
+    """Every reference run (CLUB tests: every season run) of the test with its figures, in run order."""
+    if category_of(test) == "CLUB":
+        refs = [as_dict(run) for run in as_list(test.get("runs"))
+                if str(as_dict(run).get("kind") or "").upper() == "REPEAT"]
+    else:
+        refs = [as_dict(run) for run in as_list(test.get("runs"))
+                if str(as_dict(run).get("kind") or "").startswith("REFERENCE")]
     refs.sort(key=lambda run: run.get("index") if isinstance(run.get("index"), int) else 99)
     clubs = []
     for run in refs:
@@ -380,7 +418,7 @@ def by_club(test):
             "teamId": run.get("teamId"),
             "teamName": run.get("teamName"),
             "tier": run.get("tier"),
-            "label": run.get("label"),
+            "label": run.get("label") or (("Season run %s" % run.get("index")) if category_of(test) == "CLUB" else None),
             "predictedPosition": positive_int(run.get("predictedPosition")),
             "leagueSize": positive_int(run.get("leagueSize")),
             "results": {name: with_pts_pct(stats.get(name)) for name in SPLITS} if stats else None,
@@ -516,6 +554,8 @@ def build(repo, out):
             "teamName": test.get("teamName"),
             "leagueId": test.get("leagueId"),
             "leagueName": test.get("leagueName"),
+            "predictedPosition": positive_int(test.get("predictedPosition")),
+            "leagueSize": positive_int(test.get("leagueSize")),
             "season": test.get("season"),
             "engine": test.get("engine"),
             "version": version_of(test),
@@ -528,6 +568,8 @@ def build(repo, out):
             "chosen": split_or_none(test.get("chosen")),
             "diamond": test.get("diamond") if isinstance(test.get("diamond"), dict) else None,
             "category": category_of(test),
+            "repeats": repeats_of(test),
+            "settings": settings_of(test),
             "byTier": by_tier(test) if category_of(test) == "GENERAL" else {},
             "byClub": by_club(test),
             "formationOnly": formation_only(test),

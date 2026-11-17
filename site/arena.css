@@ -196,6 +196,29 @@ a { color: var(--fm-info); }
 #team-note { margin: 4px 0 10px; min-height: 1em; }
 .ta-filter input { accent-color: var(--fm-accent); }
 .pct { font-weight: 600; }
+.ta-engine { margin-left: auto; }
+.eng { font-weight: 700; font-size: 0.85em; letter-spacing: 0.04em; }
+.eng-2d { color: var(--fm-info); }
+.eng-classic { color: var(--fm-text-dim); }
+
+/* Leaderboard: column sets, tactic-setting filters */
+.ta-seg { display: inline-flex; border: 1px solid var(--fm-border); border-radius: var(--fm-radius); overflow: hidden; }
+.ta-seg button { background: var(--fm-bg-row); color: var(--fm-text-dim); border: 0; padding: 7px 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; font-size: 0.85em; }
+.ta-seg button + button { border-left: 1px solid var(--fm-border); }
+.ta-seg button.active { background: var(--fm-accent-soft); color: var(--fm-accent); }
+.ta-seg button:hover { color: var(--fm-heading); }
+.ta-table td.set-def { color: var(--fm-text-faded); }
+.ta-table td.set-on { color: var(--fm-accent); font-weight: 800; }
+.ta-table tr.filter-row th { padding: 4px 6px; text-transform: none; letter-spacing: 0; font-size: 0.9em; }
+.ta-select-sm { padding: 3px 4px; font-size: 0.85em; max-width: 140px; }
+.ta-select.on { border-color: var(--fm-accent); color: var(--fm-accent); }
+.ta-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.filter-chip { background: var(--fm-accent-soft); color: var(--fm-accent); border: 1px solid var(--fm-accent); border-radius: 999px;
+  padding: 4px 10px; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 0.82em; max-width: 100%; white-space: normal; text-align: left; }
+.filter-chip:hover { color: var(--fm-heading); }
+.ta-link-btn { background: transparent; border: 0; color: var(--fm-info); cursor: pointer; font-family: inherit; font-size: 0.85em;
+  font-weight: 700; padding: 4px 6px; text-decoration: underline; }
 
 /* Tested clubs: one row per run, the details open under it */
 .runs-card .ta-table-wrap { border-radius: var(--fm-radius); margin-top: 8px; }
@@ -222,6 +245,10 @@ a { color: var(--fm-info); }
   .best-card { padding: 8px 10px; }
   .best-meta { font-size: 0.78em; }
   .runs-table .opt { display: none; }
+  .ta-engine { margin-left: 0; }
+  .ta-toolbar .ta-actions { width: 100%; }
   .runs-table td.cups { max-width: 140px; }
   .run-detail-inner { padding: 10px; }
 }
+.eng-badge { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.8em; font-weight: 800;
+  letter-spacing: 0.04em; background: rgba(52, 152, 219, 0.2); color: var(--fm-info); }

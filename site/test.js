@@ -1,5 +1,6 @@
 /*
- * Test page: results block of the reference clubs, the chosen club's run apart, then for
+ * Test page: results block of the reference clubs (or, for a CLUB test, the mean of the repeated
+ * seasons of one club), the chosen club's run apart, then for
  * every run the tactic, the full schedule and the competition overview. Saved screenshots
  * are shown when the test has them; otherwise the panel is drawn from the data.
  */
@@ -13,8 +14,25 @@
     REFERENCE: 'Reference',
     REFERENCE_TOP: 'Reference · highest reputation',
     REFERENCE_MEDIAN: 'Reference · median reputation',
-    REFERENCE_BOTTOM: 'Reference · lowest reputation'
+    REFERENCE_BOTTOM: 'Reference · lowest reputation',
+    REPEAT: 'Season run'
   };
+  var ENGINE_TITLE = "2D engine for the tested club's matches, classic engine for the rest";
+
+  function isClubTest(test) { return String(test.category || '').toUpperCase() === 'CLUB'; }
+
+  /** "Classic" / "2D" for the header. */
+  function engineText(test) {
+    var value = String(test.engine || '').toLowerCase();
+    if (value === 'classic') return 'Classic';
+    if (value.indexOf('2d') === 0) return '2D';
+    return A.show(test.engine);
+  }
+
+  /** "Season run 2" for a run of a CLUB test. */
+  function seasonLabel(run) {
+    return (typeof run.label === 'string' && run.label) || ('Season run ' + A.show(run.index));
+  }
   var KINDS = [
     { key: 'tactic', label: 'Tactic' },
     { key: 'schedule', label: 'Schedule' },
@@ -522,7 +540,8 @@
   function runDetail(run, images) {
     var box = h('div');
     if (run.message) box.appendChild(h('p', { class: 'ta-error', text: run.message }));
-    var league = A.resultsBlock(run.stats, 'League · ' + A.show(run.teamName), 'Available when this run has finished.');
+    var league = A.resultsBlock(run.stats, 'League · ' + (run.kind === 'REPEAT' ? seasonLabel(run) + ' · ' : '') + A.show(run.teamName),
+      'Available when this run has finished.');
     if (diamondCell(run) !== null) {
       var d = obj(run.diamond);
       var place = A.placeText(d.position, d.of);
@@ -549,7 +568,7 @@
 
   /* ---------- clubs table ---------- */
 
-  var KIND_ORDER = { CHOSEN: 0, REFERENCE_TOP: 1, REFERENCE_MEDIAN: 2, REFERENCE_BOTTOM: 3 };
+  var KIND_ORDER = { CHOSEN: 0, REFERENCE_TOP: 1, REFERENCE_MEDIAN: 2, REFERENCE_BOTTOM: 3, REPEAT: 4 };
 
   function leagueOf(run) {
     var comps = list(obj(run.result).competitions);
@@ -604,7 +623,8 @@
     });
     var hasDiamond = runs.some(function (r) { return diamondCell(r) !== null; });
     var hasPlayers = runs.some(function (r) { return playersCell(r) !== null; });
-    var columns = ['Club', 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
+    var club = isClubTest(test);
+    var columns = [club ? 'Season' : 'Club', club ? 'Club' : 'Role', 'Reputation', 'Media prediction', 'Finished', 'PLD', 'PTS', 'GD', 'GF', 'GA', 'xGF', 'xGA', 'xGD']
       .concat(hasDiamond ? ['Diamond League'] : []).concat(hasPlayers ? ['Top scorer · rating'] : []).concat(['Cups']);
     var optional = { GF: 1, GA: 1, xGF: 1, xGA: 1, Role: 1 };
     var wrap = h('div', { class: 'ta-table-wrap runs-wrap' });
@@ -634,12 +654,13 @@
       var cups = cupsText(run);
       var detailId = 'run-detail-' + id;
 
-      var club = h('td', { class: 'ta-left ta-strong' }, h('span', { class: 'run-arrow', 'aria-hidden': 'true', text: '▸' }),
-        run.teamName || 'club not chosen');
-      if (run.status && run.status !== 'DONE') club.appendChild(h('span', { class: 'ta-status ' + run.status, text: run.status }));
+      var first = h('td', { class: 'ta-left ta-strong' }, h('span', { class: 'run-arrow', 'aria-hidden': 'true', text: '▸' }),
+        club ? seasonLabel(run) : (run.teamName || 'club not chosen'));
+      if (run.status && run.status !== 'DONE') first.appendChild(h('span', { class: 'ta-status ' + run.status, text: run.status }));
       var summary = h('tr', { class: 'run-row', tabindex: '0', role: 'button', 'aria-expanded': 'false', 'aria-controls': detailId },
-        club,
-        h('td', { class: 'ta-left opt', text: (typeof run.label === 'string' && run.label) || RUN_KIND_LABELS[run.kind] || A.show(run.kind) }),
+        first,
+        h('td', { class: 'ta-left opt', text: club ? A.show(run.teamName)
+          : ((typeof run.label === 'string' && run.label) || RUN_KIND_LABELS[run.kind] || A.show(run.kind)) }),
         h('td', { text: A.isNum(run.teamReputation) ? String(run.teamReputation) : '—' }),
         h('td', { text: predicted || '—' }),
         h('td', { class: finishClass, title: finishTitle, text: done ? A.placeText(done.position, done.size) : '—' }),
@@ -679,8 +700,10 @@
     });
 
     var card = h('section', { class: 'ta-card runs-card' },
-      h('h3', { text: 'Tested clubs' }),
-      h('p', { class: 'ta-small', text: 'Click a club to see its results, tactic, full schedule and competition overview.' }),
+      h('h3', { text: club ? 'Season runs · ' + A.show(test.teamName) : 'Tested clubs' }),
+      h('p', { class: 'ta-small', text: club
+        ? 'The same first season of ' + A.show(test.teamName) + ', played ' + runs.length + ' times. Click a season run to see its results, tactic, full schedule and competition overview.'
+        : 'Click a club to see its results, tactic, full schedule and competition overview.' }),
       wrap);
     // Rows named in the address open once the table is on the page.
     card.__restore = function () {
@@ -698,31 +721,38 @@
 
     document.title = (test.name ? test.name + ' · ' : '') + 'Tactic Arena';
     page.textContent = '';
+    var club = isClubTest(test);
+    var repeats = A.isNum(test.repeats) ? test.repeats : list(test.runs).filter(function (r) { return r && r.kind === 'REPEAT'; }).length;
+    var pred = A.placeText(test.predictedPosition, test.leagueSize);
     var sub = [
       A.formationLabel(test.formation),
-      test.teamName ? String(test.teamName) : 'general test (reference clubs only)',
+      club ? 'club test: ' + A.show(test.teamName) + (pred ? ' (pred. ' + pred + ')' : '') + ', ' + repeats + ' seasons'
+        : (test.teamName ? String(test.teamName) : 'general test (reference clubs only)'),
       test.leagueName ? String(test.leagueName) : null,
       test.autoEleven === true ? 'automatic eleven' : null,
       'by ' + A.show(test.owner),
       'season ' + A.show(test.season) + ', days ' + A.show(test.startDay) + '–' + A.show(test.endDay),
-      'engine ' + A.show(test.engine), A.formatDate(test.createdAt, true)
+      A.formatDate(test.createdAt, true)
     ].filter(Boolean);
     var heading = h('h1', { text: A.show(test.name) });
     if (test.status && test.status !== 'DONE') heading.appendChild(h('span', { class: 'ta-status ' + test.status, text: test.status }));
     page.appendChild(h('div', { class: 'ta-head' },
       h('div', null,
         h('span', { class: 'ta-eyebrow', text: 'Tactic Arena' + (test.id !== undefined ? ' · test #' + test.id : '') }),
-        heading, h('p', { class: 'ta-sub', text: sub.join(' · ') })),
+        heading, h('p', { class: 'ta-sub' }, h('span', { class: 'eng-badge', title: ENGINE_TITLE, text: engineText(test) + ' engine' }),
+          sub.join(' · '))),
       h('div', { class: 'ta-actions' }, h('a', { class: 'ta-btn', href: 'index.html', text: 'Leaderboard' }))));
     if (test.message) page.appendChild(h('p', { class: 'ta-error', text: test.message }));
 
     page.appendChild(h('section', { class: 'ta-card' },
       h('div', { class: 'split-pair' },
         A.resultsBlock(test.results,
-          String(test.category || '').toUpperCase() === 'DIAMOND' ? 'Results · Diamond League clubs' : 'Results · reference clubs',
-          'Available when the reference runs have finished.'),
+          club ? 'Results · mean of ' + repeats + ' seasons of ' + A.show(test.teamName)
+            : (String(test.category || '').toUpperCase() === 'DIAMOND' ? 'Results · Diamond League clubs' : 'Results · reference clubs'),
+          club ? 'Available when the season runs have finished.' : 'Available when the reference runs have finished.'),
         test.diamond && obj(test.diamond).overall
-          ? A.resultsBlock(test.diamond, 'Diamond League · reference clubs that play in it') : null)));
+          ? A.resultsBlock(test.diamond, club ? 'Diamond League · mean of ' + repeats + ' seasons'
+            : 'Diamond League · reference clubs that play in it') : null)));
     var clubs = runsTable(test, runImages);
     page.appendChild(clubs);
     clubs.__restore();
