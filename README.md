@@ -5,6 +5,7 @@ Results of the tactic tests run with the **Tactic Arena** of the football manage
 
 **Site:** <https://ciprianamza.github.io/footballmanager-tactic-arena-results/>
 
+
 ## Repository layout
 
 ```text
