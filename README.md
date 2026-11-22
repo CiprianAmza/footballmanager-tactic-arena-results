@@ -1,6 +1,6 @@
 # Tactic Arena results
 
-Results of the tactic tests run with the **Tactic Arena** of the football manager game
+Results of the tactic tests run with the *Tactic Arena* of the football manager game
 (backend: `footballmanager-backend-`, section "Tactic testing (Tactic Arena)" of its README).
 
 **Site:** <https://ciprianamza.github.io/footballmanager-tactic-arena-results/>
