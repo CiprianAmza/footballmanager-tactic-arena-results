@@ -1,4 +1,4 @@
-# Tactic Arena results=
+# Tactic Arena results=====
 
 Results of the tactic tests run with the *Tactic Arena* of the football manager game
 (backend: `footballmanager-backend-`, section "Tactic testing (Tactic Arena)" of its README).
